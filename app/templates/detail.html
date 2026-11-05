@@ -25,6 +25,22 @@
     {% else %}<div class="empty">No results recorded for this model yet.</div>{% endif %}
   </div>
 
+  {% if evals %}<div class="box"><h2>Judge evaluations ({{ evals|length }})</h2>
+    {% for r in evals %}<details class="eval"{% if loop.first %} open{% endif %}>
+      <summary>{{ r.date }} · {{ r.node }} · {{ r.label }} · overall <b>{{ r.eval.overall_score|num(2) }}</b>
+        {% for c, v in (r.eval.per_category or {}).items() %}<span class="chip">{{ c }} {{ v|num(2) }}</span> {% endfor %}
+        {% if r._pending %}<span class="chip" title="uploaded, not committed to git yet">pending</span>{% endif %}</summary>
+      <div class="tablewrap"><table><thead><tr><th>Prompt (click for the judge's reasoning)</th><th>Category</th><th>Scores</th><th class="num">Mean</th><th class="num">Time s</th><th class="num">Tokens</th><th>Finish</th></tr></thead><tbody>
+      {% for p in r.eval.prompts %}{% set mean = (p.scores.values()|sum) / (p.scores|length) %}<tr class="{{ 'lowscore' if mean < 7 }}">
+        <td>{% if p.rationale %}<details class="why"><summary class="mono">{{ p.id }}</summary><p class="note">{{ p.rationale }}</p></details>{% else %}<span class="mono">{{ p.id }}</span>{% endif %}</td>
+        <td>{{ p.category or '' }}</td>
+        <td class="mono">{% for k, v in p.scores.items() %}{{ k }} {{ v|num(0) }}{% if not loop.last %} · {% endif %}{% endfor %}</td>
+        <td class="num">{{ mean|num(1) }}</td><td class="num">{{ p.response_s|num(1) }}</td><td class="num">{{ p.response_tokens|num }}</td><td>{{ p.finish_reason or '' }}</td></tr>
+      {% endfor %}</tbody></table></div>
+      <p class="note">Scores and reasoning are the judge's ({{ r.eval.judge or 'unknown judge' }}), first pass, not verified. {{ r.eval.prompt_set or '' }}. Prompt text and responses are not stored here.</p>
+    </details>{% endfor %}
+  </div>{% endif %}
+
   <div class="box"><h2>Recipe</h2>
   {% if recipe %}
     <dl><dt>Image</dt><dd class="mono">{{ recipe.image }}</dd>

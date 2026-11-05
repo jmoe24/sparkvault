@@ -197,6 +197,40 @@ def test_html_in_catalogue_data_is_escaped(authed, env):
     assert "<script>alert(1)" not in h and "&lt;script&gt;" in h
 
 
+def _eval_record(env, **over):
+    r = json.loads(next((env.catalogue_dir / "results").glob("2026-09-21-*qwen-agent-eval.json")).read_text())
+    r.update(id="2026-11-05-node-a-judge", date="2026-11-05", label="judge-eval")
+    r["eval"].update(per_category={"coding": 8.5}, prompts=[
+        {"id": "coding-01", "category": "coding", "scores": {"correctness": 9, "clarity": 8}, "rationale": "Solid. <b>bold</b>",
+         "response_s": 12.5, "response_tokens": 400, "finish_reason": "stop"},
+        {"id": "coding-02", "category": "coding", "scores": {"correctness": 4, "clarity": 6}, "rationale": "Wrong API.",
+         "response_s": 9.0, "response_tokens": 300, "finish_reason": "stop"}])
+    r.update(over)
+    (env.catalogue_dir / "results" / f"{r['id']}.json").write_text(json.dumps(r))
+    return r
+
+
+def test_detail_lists_per_prompt_judgements_and_escapes_the_rationale(authed, env):
+    _eval_record(env)
+    h = authed.get("/m/qwen-agent").text
+    assert "Judge evaluations (1)" in text(h) and "coding-01" in h and "coding-02" in h
+    assert "correctness 9" in text(h) and "Wrong API." in h
+    assert 'class="lowscore"' in h                     # coding-02 averages 5.0, under 7
+    assert "<b>bold</b>" not in h and "&lt;b&gt;bold&lt;/b&gt;" in h
+
+
+def test_model_without_per_prompt_data_has_no_judgement_box(authed):
+    assert "Judge evaluations" not in authed.get("/m/qwen-agent").text
+
+
+def test_eval_prompts_must_not_carry_unknown_fields(authed, env):
+    r = _eval_record(env, id="2026-11-05-node-a-leaky")
+    r["eval"]["prompts"][0]["prompt_text"] = "secret prompt"          # prompt text is not allowed in a record
+    (env.catalogue_dir / "results" / f"{r['id']}.json").write_text(json.dumps(r))
+    assert "2026-11-05-node-a-leaky.json" in authed.get("/").text    # reported as a problem, not shown
+    assert "secret prompt" not in authed.get("/m/qwen-agent").text
+
+
 # ---- the recipe renderer is the one the golden check proves ----
 def test_golden_recipe_check_passes():
     r = subprocess.run([sys.executable, str(ROOT / "tools" / "check-recipes.py")], capture_output=True, text=True)

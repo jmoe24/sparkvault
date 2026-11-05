@@ -197,6 +197,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         r = m.get("recipe")
         return page(request, "detail.html", nav="catalogue", s=summarize(m, lib.results), m=m, info=info,
                     state=state, state_msg=msg, recipe=r, runs=[flat(x) for x in summarize(m, lib.results).runs],
+                    evals=[x for x in summarize(m, lib.results).runs if x.get("eval", {}).get("prompts")],
                     command=render_recipe(r, m["hf_repo"]) if r else None)
 
     @app.get("/drift")

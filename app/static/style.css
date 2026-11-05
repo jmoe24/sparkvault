@@ -169,3 +169,10 @@ tr.row td a { color: inherit; }
 .state.missing, .state.broken, .state.unreadable { color: var(--bad); } .state.absent { color: var(--rejected); }
 pre.cmd { background: #05000d; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font: 12.5px/1.5 var(--mono); white-space: pre-wrap; word-break: break-all; color: #c9f9ff; margin: 8px 0 0; }
 .phase { color: var(--dim); font-size: 12.5px; }
+
+/* judge evaluations on the model page */
+details.eval { margin: 0 0 10px; }
+details.eval > summary { cursor: pointer; padding: 4px 0; }
+details.why > summary { cursor: pointer; }
+details.why p { max-width: 70ch; white-space: normal; margin: 6px 0 2px; }
+tr.lowscore td { color: var(--testing); }

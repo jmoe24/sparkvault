@@ -200,6 +200,61 @@
             "minimum": 0,
             "maximum": 10
           }
+        },
+        "prompts": {
+          "type": "array",
+          "maxItems": 200,
+          "description": "One entry per prompt: the judge's scores and rationale plus timing. Never the prompt text or the model's response (shown by id; the prompt set file holds the text).",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "scores"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9._-]{1,64}$",
+                "description": "The prompt's id in the prompt set, e.g. coding-01."
+              },
+              "category": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "scores": {
+                "type": "object",
+                "minProperties": 1,
+                "maxProperties": 12,
+                "description": "Judge sub-scores by criterion name, each 0-10.",
+                "propertyNames": {
+                  "pattern": "^[a-z_]{1,40}$"
+                },
+                "additionalProperties": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 10
+                }
+              },
+              "rationale": {
+                "type": "string",
+                "maxLength": 3000,
+                "description": "The judge's explanation, as written. Judge-generated, not verified."
+              },
+              "response_s": {
+                "type": "number",
+                "minimum": 0
+              },
+              "response_tokens": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "finish_reason": {
+                "type": "string",
+                "maxLength": 32
+              }
+            }
+          }
         }
       }
     },
