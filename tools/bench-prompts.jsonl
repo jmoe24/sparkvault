@@ -1,0 +1,20 @@
+{"prompt": "Write a detailed 500 word essay about the history of lighthouses."}
+{"prompt": "Explain in depth how a modern CPU executes an instruction, from fetch to retire, including pipelining, branch prediction and out-of-order execution."}
+{"prompt": "Write a thorough guide for someone setting up a home network with VLANs, covering the reasons for each VLAN, firewall rules between them, and common mistakes."}
+{"prompt": "Describe the causes, major events and consequences of the French Revolution in detail."}
+{"prompt": "Write a detailed explanation of how TLS 1.3 establishes a secure connection, step by step, and why each step exists."}
+{"prompt": "Compare relational databases and document databases in depth: data modelling, consistency, scaling, query languages and when to choose each."}
+{"prompt": "Write a long, careful code review of a hypothetical Python web service that stores user uploads on disk, listing security, reliability and maintainability problems and how to fix each."}
+{"prompt": "Explain how photosynthesis works at the molecular level, including the light reactions, the Calvin cycle, and how plants adapt to hot, dry climates."}
+{"prompt": "Draft a detailed project plan for migrating a small company's file server to cloud storage, with phases, risks, rollback steps and communication to staff."}
+{"prompt": "Explain the differences between TCP and UDP in detail, with examples of applications that suit each and how congestion control works in TCP."}
+{"prompt": "Write a detailed essay on the economic effects of the printing press in early modern Europe."}
+{"prompt": "Describe how a transformer language model processes a prompt, from tokenization through attention layers to sampling the next token, in detail."}
+{"prompt": "Write a comprehensive troubleshooting guide for a Linux server that has become slow, covering CPU, memory, disk, network and application-level checks in order."}
+{"prompt": "Explain in depth how vaccines train the immune system and why booster doses are sometimes needed."}
+{"prompt": "Write a detailed history of the internet from ARPANET to the modern web, covering protocols, institutions and turning points."}
+{"prompt": "Describe in detail how to design a rate limiter for a public API, comparing token bucket, sliding window and leaky bucket approaches."}
+{"prompt": "Write a detailed explanation of how GPS works, including satellite timing, trilateration, relativistic corrections and sources of error."}
+{"prompt": "Explain how container networking works in Docker: bridge networks, port publishing, iptables rules and DNS, with common pitfalls."}
+{"prompt": "Write a long, structured comparison of renewable energy sources, covering cost, reliability, storage needs and environmental impact."}
+{"prompt": "Describe in detail how you would teach a complete beginner to read a balance sheet, with a worked example and common misunderstandings."}

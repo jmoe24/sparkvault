@@ -150,6 +150,13 @@ SPARKVAULT_URL=http://host:8080 SPARKVAULT_INGEST_TOKEN=... tools/submit-result.
   only buys "accepts schema-valid records into a quarantine folder". Terminate TLS in front of it before you
   widen who can reach it.
 
+**Benchmark notes.** `tools/bench-vllm.sh` takes its output tokens/s from the server's own
+`vllm:generation_tokens_total` counter, not from `vllm bench serve`, which counts only visible text and so
+undercounts reasoning models (gpt-oss reported about a third of what it generated). A run that generated fewer than
+95% of the requested tokens is written with `complete: false`. `BENCH_DATASET=prompts` sends the long-form questions
+in `tools/bench-prompts.jsonl` instead of random tokens, which some models answer briefly (about 170 of 256 tokens for
+gpt-oss-120b). Numbers are comparable only within one dataset, so say which you used in the record's `source`.
+
 ## Security model
 
 SparkVault is built for a trusted, self-hosted network, not the open internet.
@@ -159,6 +166,15 @@ SparkVault is built for a trusted, self-hosted network, not the open internet.
 - Read-only mounts, read-only root filesystem, all capabilities dropped, `no-new-privileges`.
 - Content-Security-Policy with no inline script or style; catalogue text is escaped (tested).
 - If you find a vulnerability, please open a private security advisory on GitHub rather than a public issue.
+
+## Open work
+
+- **Publish the Ansible playbooks.** The deploy and benchmark flow (a playbook that brings a model up, runs
+  `tools/bench-vllm.sh`, builds the record and uploads it) lives in a private homelab repo today. A sanitized,
+  variable-driven version belongs here so the whole loop is reproducible.
+- **Same-dataset comparisons.** Records made with the random dataset and with `BENCH_DATASET=prompts` are not
+  comparable. Re-run older models on `prompts` and say which dataset each record used.
+- **Tool-call and replay results** are in the schema but not collected automatically yet.
 
 ## Development
 
@@ -182,6 +198,6 @@ export SPARKVAULT_CATALOGUE_DIR=$PWD/examples SPARKVAULT_HF_DIR=/path/to/hugging
 | `app/` | The web app (FastAPI + Jinja, server-rendered, no JavaScript) and the result schema. |
 | `tests/` | Auth/CSRF/lockout, filters and sorting, drift states against mock caches, bad data never crashes the app, output escaping, the golden recipe check, upload. |
 | `examples/` | A sample catalogue, results and launch scripts to copy and edit. |
-| `tools/` | `check-recipes.py`, `import-results.py`, `results-report.py` (Markdown report), `bench-vllm.sh`, `submit-result.sh`. |
+| `tools/` | `check-recipes.py`, `import-results.py`, `results-report.py` (Markdown report), `bench-vllm.sh` (+ `bench-prompts.jsonl`), `submit-result.sh`. |
 | `scripts/` | `init-env.sh` (creates `sparkvault.env`), `sync-app.sh` (copies the app to your server), `sync-catalogue.sh` (copies your catalogue). |
 | `Dockerfile`, `docker-compose.yml`, `sparkvault.env.example` | Container files. |
