@@ -1,0 +1,39 @@
+# SparkVault: one service, built straight from the public GitHub repo (no clone needed).
+#
+#   1. Create .env next to this file:  scripts/init-env.sh   (or copy .env.example and fill it in)
+#   2. docker compose up -d --build
+#
+# Everything host-specific comes from .env. Nothing below is hard-coded to one machine, and the
+# three host folders have no default on purpose: the app should only see folders you chose.
+#
+# Build source: the default is the main branch. Pin a tag or commit for repeatable builds:
+#   SPARKVAULT_BUILD_CONTEXT=https://github.com/jmoe24/sparkvault.git#v0.1.0
+# The app is plain HTTP and meant for a trusted network. Put it behind a TLS reverse proxy
+# before exposing it further, and then set SPARKVAULT_COOKIE_SECURE=1.
+name: sparkvault
+services:
+  sparkvault:
+    build:
+      context: ${SPARKVAULT_BUILD_CONTEXT:-https://github.com/jmoe24/sparkvault.git#main}
+    image: sparkvault:local
+    container_name: sparkvault
+    restart: unless-stopped
+    # The container user must be able to read the catalogue and the Hugging Face cache, and
+    # write the inbox. If a host folder is owned by someone else, set these to its owner
+    # (check from inside the container: `docker exec sparkvault sh -c 'id; ls -ldn /catalogue /hf /inbox'`;
+    # an NFS-exported share can look open over the network while the real filesystem is not).
+    user: "${SPARKVAULT_UID:-10001}:${SPARKVAULT_GID:-10001}"
+    env_file: .env
+    environment:
+      SPARKVAULT_CATALOGUE_DIR: /catalogue
+      SPARKVAULT_HF_DIR: /hf
+      SPARKVAULT_INBOX_DIR: /inbox
+    ports:
+      - "${SPARKVAULT_PORT:-8080}:8080"
+    volumes:
+      - ${SPARKVAULT_CATALOGUE_HOST_DIR:?set SPARKVAULT_CATALOGUE_HOST_DIR in .env}:/catalogue:ro
+      - ${SPARKVAULT_HF_HOST_DIR:?set SPARKVAULT_HF_HOST_DIR in .env}:/hf:ro
+      - ${SPARKVAULT_INBOX_HOST_DIR:-./inbox}:/inbox
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]

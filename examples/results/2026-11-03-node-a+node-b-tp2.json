@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "id": "2026-11-03-node-a+node-b-tp2",
+  "date": "2026-11-03",
+  "model": "qwen-agent",
+  "node": "node-a+node-b",
+  "topology": "tp2",
+  "label": "tp2-no-ray",
+  "validity": "ok",
+  "config": {
+    "launch_script": "examples/scripts/run-vllm-cluster.sh",
+    "flags_note": "TP-2, no Ray, current image",
+    "model_sha": "491c2f1ea524c639598bf8fa787a93fed5a6fbce"
+  },
+  "bench": {
+    "single_stream_tok_s": 58.1,
+    "concurrent": {
+      "num_prompts": 20,
+      "output_tok_s": 321.0,
+      "total_tok_s": 655.2,
+      "mean_ttft_ms": 1747.7,
+      "mean_tpot_ms": 50.9,
+      "p99_itl_ms": 4320.9,
+      "failed_requests": 0
+    },
+    "spec_decode_acceptance_pct": 61.17
+  },
+  "replay": {
+    "tool_call_pass": 20,
+    "tool_call_total": 20
+  },
+  "source": "Example record (sample data shipped with SparkVault)"
+}

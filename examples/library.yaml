@@ -1,0 +1,143 @@
+# SparkVault example catalogue. Copy this folder, edit it, and point
+# SPARKVAULT_CATALOGUE_DIR (or SPARKVAULT_CATALOGUE_HOST_DIR in Docker) at it.
+# null = not recorded (do not guess; fill in when known).
+#
+# status:  active | testing | rejected
+# Results for each model live in results/*.json (schema: app/results.schema.json).
+# `recipe` is data, not a script: tools/check-recipes.py renders it and compares it with the
+# command in `golden.script` (a path relative to this folder's parent, i.e. the repo root here).
+
+models:
+  - id: qwen-agent
+    hf_repo: nvidia/Qwen3.6-35B-A3B-NVFP4
+    served_name: qwen-agent
+    litellm_alias: null
+    revision: 491c2f1ea524c639598bf8fa787a93fed5a6fbce
+    license: null
+    size_gb: null
+    quant: "NVFP4 (ModelOpt mixed: fp8 / NVFP4 / W4A16_NVFP4 / MXFP8)"
+    status: active
+    on_nas: true
+    on_nodes: [node-a, node-b]
+    launch_script: examples/scripts/run-vllm.sh
+    notes: Standing model in the example. MTP speculative decoding on.
+
+    # Recipe = how to serve this model. Data, not a script: one launcher renders it, and
+    # tools/check-recipes.py proves the rendered serve command equals the frozen
+    # script's (golden). `lock` = never editable in the UI (value is the reason).
+    # `managed` = the launcher owns it (port, served name, key, topology).
+    # Container args not modelled here (mounts, -p, --gpus, proxy env) stay in launch_script.
+    recipe:
+      image: vllm/vllm-openai:latest
+      container: vllm-main
+      restart: unless-stopped
+      golden: {script: examples/scripts/run-vllm.sh, var: SERVE_CMD, include_managed: true}
+      env:
+        - {name: HF_HUB_OFFLINE, value: "1"}
+        - {name: TRANSFORMERS_OFFLINE, value: "1"}
+      secret_env: [VLLM_API_KEY]
+      serve:
+        - {flag: --tensor-parallel-size, value: "1"}
+        - {flag: --port, value: "8000", managed: true}
+        - {flag: --trust-remote-code}
+        - {flag: --max-model-len, value: "262144"}
+        - {flag: --gpu-memory-utilization, value: "0.4"}
+        - {flag: --dtype, value: auto}
+        - {flag: --quantization, value: modelopt, lock: "required on GB10 (SM121); do not change"}
+        - {flag: --kv-cache-dtype, value: fp8, lock: "required on GB10 (SM121); do not change"}
+        - {flag: --attention-backend, value: flashinfer, lock: "required on GB10 (SM121); do not change"}
+        - {flag: --moe-backend, value: marlin, lock: "required on GB10 (SM121); do not change"}
+        - {flag: --max-num-seqs, value: "32"}
+        - {flag: --max-num-batched-tokens, value: "8192"}
+        - {flag: --enable-chunked-prefill}
+        - {flag: --async-scheduling}
+        - {flag: --enable-prefix-caching}
+        - {flag: --enable-auto-tool-choice, lock: "tool calling depends on it"}
+        - {flag: --tool-call-parser, value: qwen3_coder}
+        - {flag: --reasoning-parser, value: qwen3}
+        - {flag: --speculative-config, value: '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'}
+        - {flag: --load-format, value: fastsafetensors}
+        - {flag: --served-model-name, value: qwen-agent, managed: true, lock: "routing name; changing it breaks gateway routes"}
+        - {flag: --api-key, value: '"$VLLM_API_KEY"', managed: true, lock: "secret, supplied by the node"}
+
+  - id: gpt-oss-120b
+    hf_repo: openai/gpt-oss-120b
+    served_name: openai/gpt-oss-120b
+    litellm_alias: null
+    revision: b5c939de8f754692c1647ca79fbf85e8c1e70f8a
+    license: null
+    size_gb: 61
+    quant: MXFP4
+    status: testing
+    on_nas: true
+    on_nodes: [node-a, node-b]
+    launch_script: examples/scripts/run-vllm-cluster.sh
+    notes: Two-node tensor-parallel example. Not benchmarked yet.
+
+    recipe:
+      image: vllm/vllm-openai:latest
+      container: vllm-cluster
+      restart: "no"
+      golden: {script: examples/scripts/run-vllm-cluster.sh, var: COMMON, include_managed: false, subst: {"$MODEL_ID": openai/gpt-oss-120b, "$MXFP4_LAYERS": "moe,qkv,o"}}
+      env:
+        - {name: VLLM_USE_FLASHINFER_MOE_MXFP4_MXFP8, value: "1"}
+        - {name: HF_HUB_OFFLINE, value: "1"}
+        - {name: TRANSFORMERS_OFFLINE, value: "1"}
+      secret_env: [VLLM_API_KEY]
+      serve:
+        - {flag: --tool-call-parser, value: openai}
+        - {flag: --reasoning-parser, value: openai_gptoss}
+        - {flag: --enable-auto-tool-choice, lock: "tool calling depends on it"}
+        - {flag: --tensor-parallel-size, value: "2", lock: "topology"}
+        - {flag: --gpu-memory-utilization, value: "0.7"}
+        - {flag: --enable-prefix-caching}
+        - {flag: --load-format, value: fastsafetensors}
+        - {flag: --quantization, value: mxfp4, lock: "image-specific, keep verbatim"}
+        - {flag: --mxfp4-backend, value: CUTLASS, lock: "image-specific, keep verbatim"}
+        - {flag: --mxfp4-layers, value: "moe,qkv,o", lock: "lm_head is excluded: with it the engine dies in profiling on GB10"}
+        - {flag: --attention-backend, value: FLASHINFER}
+        - {flag: --kv-cache-dtype, value: fp8}
+        - {flag: --max-num-batched-tokens, value: "8192"}
+        - {flag: --distributed-executor-backend, value: ray, managed: true, lock: "topology"}
+
+  - id: nemotron-3.5-lightning
+    hf_repo: nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4
+    served_name: null
+    litellm_alias: null
+    revision: bee7596271d1495f6992ae224aefde4410e816b8
+    license: null
+    size_gb: null
+    quant: NVFP4
+    status: rejected
+    on_nas: true
+    on_nodes: []
+    launch_script: null
+    notes: Quality close to the winner but slower at flag parity (no MTP). Rejected 2026-09-21.
+
+  - id: llama-3.3-70b
+    hf_repo: nvidia/Llama-3.3-70B-Instruct-NVFP4
+    served_name: null
+    litellm_alias: null
+    revision: f792b707002f2c613e0729c6b37bbcedc4efa94e
+    license: null
+    size_gb: 40
+    quant: NVFP4
+    status: rejected
+    on_nas: true
+    on_nodes: []
+    launch_script: null
+    notes: Dense 70B. Worse in every category and about 3x slower. Rejected 2026-09-21.
+
+  - id: qwen2.5-7b
+    hf_repo: Qwen/Qwen2.5-7B-Instruct
+    served_name: null
+    litellm_alias: null
+    revision: a09a35458c702b33eeacc393d103063234e8bc28
+    license: null
+    size_gb: null
+    quant: null
+    status: rejected
+    on_nas: true
+    on_nodes: []
+    launch_script: null
+    notes: Kept only as a debugging control, not a daily driver.

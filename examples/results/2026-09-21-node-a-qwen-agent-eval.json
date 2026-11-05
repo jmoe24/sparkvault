@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "id": "2026-09-21-node-a-qwen-agent-eval",
+  "date": "2026-09-21",
+  "model": "qwen-agent",
+  "node": "node-a",
+  "topology": "single",
+  "label": "bakeoff-eval",
+  "validity": "ok",
+  "eval": {
+    "prompt_set": "12-prompt example set",
+    "judge": "example-judge",
+    "overall_score": 8.52
+  },
+  "source": "Example record (sample data shipped with SparkVault)"
+}

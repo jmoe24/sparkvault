@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "id": "2026-11-02-node-b-baseline",
+  "date": "2026-11-02",
+  "model": "qwen-agent",
+  "node": "node-b",
+  "topology": "single",
+  "label": "baseline",
+  "validity": "ok",
+  "config": {
+    "launch_script": "examples/scripts/run-vllm.sh",
+    "model_sha": "491c2f1ea524c639598bf8fa787a93fed5a6fbce"
+  },
+  "bench": {
+    "single_stream_tok_s": 94.08,
+    "concurrent": {
+      "num_prompts": 20,
+      "output_tok_s": 302.39,
+      "total_tok_s": 617.12,
+      "mean_ttft_ms": 6118.7,
+      "mean_tpot_ms": 36.38,
+      "p99_itl_ms": 167.33,
+      "failed_requests": 0
+    },
+    "spec_decode_acceptance_pct": 57.67
+  },
+  "source": "Example record (sample data shipped with SparkVault)"
+}

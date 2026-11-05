@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% macro card(s) %}
+{% set m = s.model %}
+<a class="card" href="/m/{{ m.id }}">
+  <div class="head"><div><h3>{{ m.id }}</h3><div class="repo mono">{{ m.hf_repo }}</div></div><span class="pill {{ m.status }}">{{ m.status }}</span></div>
+  <div class="headline">
+    {% if s.single is not none %}<span class="big">{{ s.single|num(1) }}</span><span class="unit">tok/s single-stream</span>
+    {% else %}<span class="none">{{ 'no throughput recorded' if s.judge is not none else 'no results yet' }}</span>{% endif %}
+  </div>
+  <div class="facts">
+    {% if m.size_gb %}<span class="chip">{{ m.size_gb }} GB</span>{% endif %}
+    {% if m.quant %}<span class="chip">{{ m.quant.split(' ')[0] }}</span>{% endif %}
+    {% for n in m.on_nodes %}<span class="chip node">{{ n }}</span>{% endfor %}
+    {% if m.on_nodes|length == 2 %}<span class="chip both">both nodes</span>{% endif %}
+    {% if m.litellm_alias %}<span class="chip">{{ m.litellm_alias }}</span>{% endif %}
+    {% if s.suspect %}<span class="chip warn">{{ s.suspect }} suspect run</span>{% endif %}
+  </div>
+  <div class="mini">
+    <div>concurrent<b>{{ s.conc|num }}</b></div><div>judge<b>{{ s.judge|num(2) }}</b></div><div>tool calls<b>{{ s.replay or '–' }}</b></div>
+  </div>
+</a>
+{% endmacro %}
+{% block body %}
+<div class="layout">
+<aside>
+  <section><h4>Status</h4>
+    {% for k in ['all','active','testing','rejected'] %}
+    <a class="filter {{ 'on' if params.status == k }}" href="{{ link(status=k) }}"><span>{{ k|capitalize }}</span><span class="n">{{ counts[k] }}</span></a>
+    {% endfor %}
+  </section>
+  <section><h4>Copy on node</h4>
+    {% for k in nodes %}
+    <a class="filter {{ 'on' if params.node == k }}" href="{{ link(node=k) }}"><span>{{ 'Any' if k == 'all' else k }}</span><span class="n">{{ node_counts[k] if k != 'all' else '' }}</span></a>
+    {% endfor %}
+  </section>
+  <section><h4>Other</h4>
+    <a class="filter {{ 'on' if params.has_results }}" href="{{ link(has_results='' if params.has_results else '1') }}"><span>Has results</span><span class="n">{{ n_with_results }}</span></a>
+  </section>
+</aside>
+<div>
+  <div class="toolbar">
+    <span class="count">{{ rows|length }} of {{ total }} models</span><span class="spacer"></span>
+    <span class="sortlinks"><span class="dim">Sort</span>
+      {% for k, label in sort_labels.items() %}<a class="{{ 'on' if params.sort == k }}" href="{{ link(sort=k, dir='') }}">{{ label }}</a>{% endfor %}
+      <a href="{{ link(dir='asc' if desc else 'desc') }}">{{ '↓ desc' if desc else '↑ asc' }}</a>
+    </span>
+    <span class="seg"><a class="{{ 'on' if params.mode == 'cards' }}" href="{{ link(mode='cards') }}">Cards</a><a class="{{ 'on' if params.mode == 'table' }}" href="{{ link(mode='table') }}">Table</a></span>
+  </div>
+  {% if not rows %}<div class="empty">No models match these filters.</div>
+  {% elif params.mode == 'cards' %}<div class="grid">{% for s in rows %}{{ card(s) }}{% endfor %}</div>
+  {% else %}
+  <div class="tablewrap"><table><thead><tr>
+    {% for key, label, cls in [('name','Model',''),('status','Status',''),(none,'Nodes',''),('size','GB','num'),('single','tok/s single','num'),('conc','tok/s conc.','num'),('ttft','TTFT ms','num'),('judge','Judge','num'),(none,'Tool calls','num')] %}
+    <th class="{{ cls }} {{ 'sorted' if key and params.sort == key }}">{% if key %}<a href="{{ link(sort=key, dir='') }}">{{ label }}{{ (' ↓' if desc else ' ↑') if params.sort == key }}</a>{% else %}{{ label }}{% endif %}</th>
+    {% endfor %}
+  </tr></thead><tbody>
+  {% for s in rows %}{% set m = s.model %}<tr class="row">
+    <td><a href="/m/{{ m.id }}">{{ m.id }}</a><div class="dim mono">{{ m.hf_repo }}</div></td>
+    <td><span class="pill {{ m.status }}">{{ m.status }}</span></td>
+    <td>{{ m.on_nodes|join(', ') or '–' }}</td>
+    <td class="num">{{ m.size_gb|num }}</td><td class="num">{{ s.single|num(1) }}</td><td class="num">{{ s.conc|num }}</td>
+    <td class="num">{{ s.ttft|num }}</td><td class="num">{{ s.judge|num(2) }}</td><td class="num">{{ s.replay or '–' }}</td>
+  </tr>{% endfor %}
+  </tbody></table></div>
+  {% endif %}
+</div>
+</div>
+{% endblock %}

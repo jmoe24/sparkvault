@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Sign in · SparkVault{% endblock %}
+{% block body %}
+<form class="box loginbox" method="post" action="/login">
+  <h2>Sign in</h2>
+  {% if error %}<p class="err">{{ error }}</p>{% endif %}
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="next" value="{{ next }}">
+  <label for="pw" class="dim">Admin password</label>
+  <input id="pw" name="password" type="password" autocomplete="current-password" autofocus required>
+  <button class="act go" type="submit">Sign in</button>
+</form>
+{% endblock %}

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}SparkVault{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/">Spark<b>Vault</b></a>
+  {% if user %}
+  <nav>
+    <a href="/" class="{{ 'on' if nav == 'catalogue' }}">Catalogue</a>
+    <a href="/drift" class="{{ 'on' if nav == 'drift' }}">Model cache</a>
+  </nav>
+  <form class="search" method="get" action="/"><input name="q" type="search" value="{{ params.q if params else '' }}" placeholder="Search models, notes…" autocomplete="off"></form>
+  <span class="proto grow">repo data {{ head[:7] if head else 'unknown' }}{{ ' +uncommitted' if head and '+dirty' in head }} · read-only</span>
+  <form method="post" action="/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="act">Sign out</button></form>
+  {% endif %}
+</header>
+<main>
+{% if user and problems %}
+<div class="problems"><b>{{ problems|length }} problem{{ 's' if problems|length != 1 }} in the repo data (skipped, not fatal):</b>
+<ul>{% for p in problems %}<li class="mono">{{ p }}</li>{% endfor %}</ul></div>
+{% endif %}
+{% if user and pending %}<p class="note"><b>{{ pending }} result{{ 's' if pending != 1 }} uploaded, not committed yet.</b> Shown below as “pending”; run <span class="mono">scripts/import-results.py</span> on the workstation and commit to make them permanent.</p>{% endif %}
+{% block body %}{% endblock %}
+</main>
+</body>
+</html>

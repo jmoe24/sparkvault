@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}{{ m.id }} · SparkVault{% endblock %}
+{% block body %}
+<div class="crumbs"><a href="/">Catalogue</a> / {{ m.id }}</div>
+<div class="detail-head"><div><h1>{{ m.id }} <span class="pill {{ m.status }}">{{ m.status }}</span></h1><div class="mono dim">{{ m.hf_repo }}</div></div></div>
+<div class="cols"><div>
+  <div class="box"><h2>Headline (latest valid run)</h2>
+    <div class="stat-row">
+      <div class="stat"><small>single-stream tok/s</small><b>{{ s.single|num(1) }}</b></div>
+      <div class="stat"><small>concurrent tok/s</small><b>{{ s.conc|num }}</b></div>
+      <div class="stat"><small>judge score</small><b>{{ s.judge|num(2) }}</b></div>
+      <div class="stat"><small>tool calls</small><b>{{ s.replay or '–' }}</b></div>
+    </div>
+    {% if s.suspect %}<p class="note">{{ s.suspect }} suspect run(s) are listed below but excluded from the headline.</p>{% endif %}
+  </div>
+
+  <div class="box"><h2>Results history ({{ runs|length }})</h2>
+    {% if runs %}<div class="tablewrap"><table><thead><tr><th>Date</th><th>Node</th><th>Run</th><th class="num">single</th><th class="num">conc.</th><th class="num">TTFT ms</th><th class="num">TPOT ms</th><th class="num">MTP acc. %</th><th class="num">Judge</th><th class="num">Tools</th></tr></thead><tbody>
+    {% for r in runs %}<tr class="{{ 'suspect' if r.validity != 'ok' }}">
+      <td>{{ r.date }}</td><td>{{ r.node }}</td>
+      <td>{{ r.label }}{% if r.pending %} <span class="chip" title="uploaded, not committed to git yet">pending</span>{% endif %}{% if r.validity != 'ok' %} <span class="chip warn" title="{{ r.note }}">suspect</span>{% endif %}{% for o in r.overrides %} <span class="chip">{{ o.flag }} {{ o['from'] if o['from'] is not none else '(new)' }} → {{ o.to if o.to is not none else '(removed)' }}</span>{% endfor %}</td>
+      <td class="num">{{ r.single|num(1) }}</td><td class="num">{{ r.conc|num }}</td><td class="num">{{ r.ttft|num }}</td><td class="num">{{ r.tpot|num(1) }}</td><td class="num">{{ r.acc|num(1) }}</td><td class="num">{{ r.judge|num(2) }}</td><td class="num">{{ r.replay or '–' }}</td>
+    </tr>{% endfor %}</tbody></table></div>
+    <p class="note">Each row is one file in <span class="mono">results/</span> in git. “suspect” = a known fault was present.</p>
+    {% else %}<div class="empty">No results recorded for this model yet.</div>{% endif %}
+  </div>
+
+  <div class="box"><h2>Recipe</h2>
+  {% if recipe %}
+    <dl><dt>Image</dt><dd class="mono">{{ recipe.image }}</dd>
+        <dt>Container</dt><dd class="mono">{{ recipe.container }} (--restart {{ recipe.restart }})</dd>
+        <dt>Env</dt><dd class="mono">{% for e in recipe.env %}{{ e.name }}={{ e.value }} {% endfor %}{{ recipe.secret_env|join(' ') }} <span class="dim">(secret: supplied by the node)</span></dd></dl>
+    <div class="flags mono">{% for f in recipe.serve %}
+      <div class="fl"><span class="fn">{{ f.flag }}</span> <span class="fv">{{ f.value if f.value is not none else '' }}</span>{% if f.lock %} <span class="lock" title="{{ f.lock }}">🔒 {{ f.lock }}</span>{% elif f.managed %} <span class="dim">managed</span>{% endif %}</div>
+    {% endfor %}</div>
+    <p class="note">The command the launcher will run (the key stays a reference; it never passes through this app):</p>
+    <pre class="cmd">{{ command }}</pre>
+    <p class="note">Checked token-for-token against <span class="mono">{{ recipe.golden.script }}</span> by <span class="mono">sparkvault/check-recipes.py</span>.</p>
+  {% else %}<p class="note">No recipe recorded. Launch script: <span class="mono">{{ m.launch_script or 'unknown' }}</span>. Without a recipe this model cannot be deployed from here.</p>{% endif %}
+  </div>
+</div><div>
+  <div class="box"><h2>In the cache</h2>
+    <p><span class="state {{ state }}">{{ state }}</span></p>
+    <p class="note">{{ state_msg }}</p>
+    {% if info.present %}<dl>
+      <dt>refs/main</dt><dd class="mono">{{ info.sha or 'missing' }}</dd>
+      <dt>Size</dt><dd>{{ '%.1f'|format(info.size / 1e9) }} GB ({{ '%.1f'|format(info.size / 1073741824) }} GiB)</dd>
+      <dt>Weights in</dt><dd>{{ info.layout or '–' }} blobs</dd>
+      <dt>Snapshots</dt><dd class="mono">{{ info.snapshots|map('truncate', 12, True, '')|join(', ') or 'none' }}</dd>
+    </dl>{% endif %}
+  </div>
+  <div class="box"><h2>Card</h2><dl>
+    <dt>Served as</dt><dd>{{ m.served_name or '–' }}</dd>
+    <dt>LiteLLM alias</dt><dd>{{ m.litellm_alias or '–' }}</dd>
+    <dt>Pinned rev.</dt><dd class="mono">{{ m.revision or 'not recorded' }}</dd>
+    <dt>License</dt><dd>{{ m.license or 'not recorded' }}</dd>
+    <dt>Size</dt><dd>{{ (m.size_gb ~ ' GB') if m.size_gb else 'not recorded' }}</dd>
+    <dt>Quant</dt><dd>{{ m.quant or 'not recorded' }}</dd>
+    <dt>On nodes</dt><dd>{{ m.on_nodes|join(', ') or 'none' }}</dd>
+    <dt>Launch script</dt><dd class="mono">{{ m.launch_script or '–' }}</dd>
+    <dt>Notes</dt><dd>{{ m.notes }}</dd>
+  </dl></div>
+  <div class="box deploy"><h2>Deploy</h2><p class="note">Not built yet (Phase 4). This version only reads.</p></div>
+</div></div>
+{% endblock %}

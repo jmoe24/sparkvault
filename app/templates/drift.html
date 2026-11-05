@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Model cache · SparkVault{% endblock %}
+{% block body %}
+<div class="detail-head"><div><h1>Model cache vs catalogue</h1>
+<div class="dim">What <span class="mono">library.yaml</span> says against what is in the Hugging Face cache. Read-only: nothing here changes either side.</div></div></div>
+{% if bad %}<div class="problems"><b>{{ bad }} model{{ 's' if bad != 1 }} need attention.</b></div>{% endif %}
+<div class="tablewrap"><table><thead><tr><th>Model</th><th>State</th><th>Detail</th><th class="num">GB</th><th>Weights in</th><th>refs/main</th></tr></thead><tbody>
+{% for r in rows %}<tr>
+  <td><a href="/m/{{ r.m.id }}">{{ r.m.id }}</a><div class="dim mono">{{ r.m.hf_repo }}</div></td>
+  <td><span class="state {{ r.state }}">{{ r.state }}</span></td><td>{{ r.msg }}</td>
+  <td class="num">{{ ('%.1f'|format(r.info.size / 1e9)) if r.info.present else '–' }}</td><td>{{ r.info.layout or '–' }}</td>
+  <td class="mono">{{ r.info.sha[:12] if r.info.sha else '–' }}</td>
+</tr>{% endfor %}</tbody></table></div>
+<div class="box">
+  <h2>In the cache but not in the catalogue ({{ extra|length }})</h2>
+  {% if extra %}<ul>{% for e in extra %}<li class="mono">{{ e }}</li>{% endfor %}</ul>{% else %}<p class="note">Nothing.</p>{% endif %}
+  <p class="note">Stale <span class="mono">*.incomplete</span> files in the shared blob store: <b>{{ stale }}</b>.</p>
+</div>
+<p class="note"><b>States:</b> unreadable = the app cannot read the cache (mount/permission problem; nothing is known about the model) · ok = matches the pinned revision · drift = refs/main differs from the pin · unpinned = catalogue has no revision · broken = dangling links or .incomplete files · missing = catalogue says it is in the cache but it is not · absent = not in the cache · stale = present but the catalogue says otherwise · norev = no refs/main.</p>
+{% endblock %}

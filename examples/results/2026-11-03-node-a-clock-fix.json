@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "2026-11-03-node-a-clock-fix",
+  "date": "2026-11-03",
+  "model": "qwen-agent",
+  "node": "node-a",
+  "topology": "single",
+  "label": "clock-fix",
+  "validity": "ok",
+  "config": {
+    "launch_script": "examples/scripts/run-vllm.sh",
+    "model_sha": "491c2f1ea524c639598bf8fa787a93fed5a6fbce"
+  },
+  "bench": {
+    "single_stream_tok_s": 90.3,
+    "concurrent": {
+      "num_prompts": 20,
+      "output_tok_s": 437.5,
+      "total_tok_s": 892.8,
+      "mean_ttft_ms": 1501.9,
+      "mean_tpot_ms": 35.5,
+      "failed_requests": 0
+    },
+    "spec_decode_acceptance_pct": 57.83
+  },
+  "source": "Example record (sample data shipped with SparkVault)"
+}
