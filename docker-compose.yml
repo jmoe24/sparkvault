@@ -1,39 +1,41 @@
-# SparkVault: one service, built straight from the public GitHub repo (no clone needed).
+# SparkVault. One compose file for every Docker host, builds from the folder it sits in.
 #
-#   1. Create .env next to this file:  scripts/init-env.sh   (or copy .env.example and fill it in)
-#   2. docker compose up -d --build
+#   1. Put this repo's files on the server (git clone there, or clone anywhere and copy them over;
+#      scripts/sync-app.sh does the copy). The Docker daemon needs no git and no internet to build
+#      from a local folder, apart from pulling python and the pip packages.
+#   2. Create the secrets file next to this one:  scripts/init-env.sh   (or copy sparkvault.env.example)
+#   3. Edit the lines marked EDIT below (your three folders, port, uid/gid).
+#   4. docker compose up -d --build        (or select this file in your NAS's Docker/Project UI)
 #
-# Everything host-specific comes from .env. Nothing below is hard-coded to one machine, and the
-# three host folders have no default on purpose: the app should only see folders you chose.
+# Paths are written inline on purpose: they work the same from the CLI and from UIs (UGOS and similar)
+# that do not read a .env next to the file for ${VAR} substitution. The secrets are not in this file;
+# they live in sparkvault.env, which is git-ignored.
 #
-# Build source: the default is the main branch. Pin a tag or commit for repeatable builds:
-#   SPARKVAULT_BUILD_CONTEXT=https://github.com/jmoe24/sparkvault.git#v0.1.0
-# The app is plain HTTP and meant for a trusted network. Put it behind a TLS reverse proxy
-# before exposing it further, and then set SPARKVAULT_COOKIE_SECURE=1.
+# The app is plain HTTP and meant for a trusted network. Put it behind a TLS reverse proxy before
+# exposing it further, and then set SPARKVAULT_COOKIE_SECURE=1 in sparkvault.env.
 name: sparkvault
 services:
   sparkvault:
     build:
-      context: ${SPARKVAULT_BUILD_CONTEXT:-https://github.com/jmoe24/sparkvault.git#main}
+      context: .                      # this folder (it must contain the Dockerfile and app/)
     image: sparkvault:local
     container_name: sparkvault
     restart: unless-stopped
-    # The container user must be able to read the catalogue and the Hugging Face cache, and
-    # write the inbox. If a host folder is owned by someone else, set these to its owner
-    # (check from inside the container: `docker exec sparkvault sh -c 'id; ls -ldn /catalogue /hf /inbox'`;
-    # an NFS-exported share can look open over the network while the real filesystem is not).
-    user: "${SPARKVAULT_UID:-10001}:${SPARKVAULT_GID:-10001}"
-    env_file: .env
+    # EDIT: run as the owner and group of your folders so the app can read the catalogue and the
+    # Hugging Face cache and write the inbox. Check the real owner with `ls -ldn <folder>` ON THE SERVER:
+    # a share exported over NFS can look open while the underlying filesystem is not.
+    user: "1000:1000"
+    env_file: sparkvault.env          # EDIT with an absolute path if your UI runs the file from another folder
     environment:
       SPARKVAULT_CATALOGUE_DIR: /catalogue
       SPARKVAULT_HF_DIR: /hf
       SPARKVAULT_INBOX_DIR: /inbox
     ports:
-      - "${SPARKVAULT_PORT:-8080}:8080"
+      - "8080:8080"                   # EDIT the LEFT number if 8080 is taken
     volumes:
-      - ${SPARKVAULT_CATALOGUE_HOST_DIR:?set SPARKVAULT_CATALOGUE_HOST_DIR in .env}:/catalogue:ro
-      - ${SPARKVAULT_HF_HOST_DIR:?set SPARKVAULT_HF_HOST_DIR in .env}:/hf:ro
-      - ${SPARKVAULT_INBOX_HOST_DIR:-./inbox}:/inbox
+      - /srv/sparkvault/catalogue:/catalogue:ro   # EDIT: folder holding library.yaml and results/
+      - /srv/models/huggingface:/hf:ro            # EDIT: Hugging Face cache root (the folder containing hub/)
+      - /srv/sparkvault/inbox:/inbox              # EDIT: writable; only used when upload is on
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
