@@ -1,14 +1,24 @@
-# SparkVault: compose template. Copy it next to the code folder, edit the copy once, and run that copy.
+# SparkVault: the compose file. This is the one source; you do not hand-edit a copy.
 #
-#   /srv/sparkvault/app/                   the code (git clone, or scripts/sync-app.sh); replaced on every update
-#   /srv/sparkvault/docker-compose.yaml    your edited copy of THIS file; updates never touch it
-#   /srv/sparkvault/sparkvault.env         secrets (scripts/init-env.sh, or copy sparkvault.env.example)
+#   <dir>/app/                    the code (git clone, or scripts/sync-app.sh); replaced on every update
+#   <dir>/docker-compose.yaml     THIS file, with your three host values filled in by scripts/make-compose.py
+#   <dir>/sparkvault.env          secrets (scripts/init-env.sh, or copy sparkvault.env.example)
+#   <dir>/catalogue/, <dir>/inbox/
 #
-# Edit the lines marked EDIT. Paths are written inline on purpose: they work the same from the CLI and from
-# UIs (UGOS and similar) that do not read a .env next to the file for ${VAR} substitution. Use absolute
-# paths for `context:` and `env_file:` in your copy. The secrets are not in this file.
-# Start: docker compose up -d --build   (or select your copy in your NAS's Docker/Project UI).
-# After a code update, rebuild; a plain restart reuses the old image.
+# Everything inside <dir> is a relative path, so the same file works wherever <dir> is, as long as your
+# Docker/UI runs the file from <dir> (check once: the catalogue page lists your models). Only three values
+# belong to your host and cannot be relative; the lines carrying them are marked `# @sv <name>`:
+#   user      the owner:group of your folders (`ls -ldn <folder>` ON THE SERVER; an NFS export can look
+#             open while the underlying filesystem is not)
+#   hf_dir    the Hugging Face cache root (the folder containing hub/), outside <dir>
+#   port      the left side of the port mapping, only if 8080 is taken
+# Put them in a small values file (deploy.example.conf) and run  scripts/make-compose.py --values FILE --out ...
+# It rewrites only those marked lines, shows a diff first, and `--check` tells you if the file you deployed
+# has drifted from this one. The values below are the defaults a plain `docker compose up` would use.
+# The secrets are not in this file.
+# Start: docker compose up -d --build   (or select the file in your NAS's Docker/Project UI).
+# The app code is mounted from <dir>/app/app, so a code update needs only a restart; rebuild just when
+# requirements.txt or the Dockerfile change.
 #
 # The app is plain HTTP and meant for a trusted network. Put it behind a TLS reverse proxy before
 # exposing it further, and then set SPARKVAULT_COOKIE_SECURE=1 in sparkvault.env.
@@ -16,25 +26,25 @@ name: sparkvault
 services:
   sparkvault:
     build:
-      context: .                      # EDIT in your copy: the absolute path of the code folder (app/ above)
+      context: ./app                  # the code folder
     image: sparkvault:local
     container_name: sparkvault
     restart: unless-stopped
-    # EDIT: run as the owner and group of your folders so the app can read the catalogue and the
-    # Hugging Face cache and write the inbox. Check the real owner with `ls -ldn <folder>` ON THE SERVER:
-    # a share exported over NFS can look open while the underlying filesystem is not.
-    user: "1000:1000"
-    env_file: sparkvault.env          # EDIT with an absolute path if your UI runs the file from another folder
+    # Run as the owner and group of your folders so the app can read the catalogue and the Hugging Face cache
+    # and write the inbox (see the header: `user`).
+    user: "1000:1000"                 # @sv user
+    env_file: ./sparkvault.env
     environment:
       SPARKVAULT_CATALOGUE_DIR: /catalogue
       SPARKVAULT_HF_DIR: /hf
       SPARKVAULT_INBOX_DIR: /inbox
     ports:
-      - "8080:8080"                   # EDIT the LEFT number if 8080 is taken
+      - "8080:8080"                   # @sv port
     volumes:
-      - /srv/sparkvault/catalogue:/catalogue:ro   # EDIT: folder holding library.yaml and results/
-      - /srv/models/huggingface:/hf:ro            # EDIT: Hugging Face cache root (the folder containing hub/)
-      - /srv/sparkvault/inbox:/inbox              # EDIT: writable; only used when upload is on
+      - ./app/app:/srv/app:ro         # the code: a code update then needs a restart, not a rebuild
+      - ./catalogue:/catalogue:ro     # folder holding library.yaml and results/
+      - /srv/models/huggingface:/hf:ro   # @sv hf_dir
+      - ./inbox:/inbox                # writable; only used when upload is on
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]

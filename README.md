@@ -18,8 +18,9 @@ records. It holds no credential for git, your nodes or Hugging Face.
 ## Deploy
 
 You need Docker with Compose on the server, a folder with your catalogue, and the Hugging Face cache the
-nodes use. Everything host-specific is either in `docker-compose.yml` (three folders, port, uid/gid: the lines
-marked `EDIT`) or in one secrets file, `sparkvault.env`.
+nodes use. Everything host-specific is either in three marked lines of `docker-compose.yml` (uid/gid, the Hugging
+Face folder, the port: filled in by `scripts/make-compose.py` from a small values file) or in one secrets file,
+`sparkvault.env`.
 
 **1. Get the code onto the server.** Either way works.
 
@@ -40,7 +41,7 @@ anything of yours inside it would be lost. A layout that works:
 ```
 /srv/sparkvault/
   app/                    <- the code (git clone or sync-app.sh). Never edit inside it.
-  docker-compose.yaml     <- YOUR copy of app/docker-compose.yml, edited once
+  docker-compose.yaml     <- generated from app/docker-compose.yml by scripts/make-compose.py
   sparkvault.env          <- secrets, mode 600
   catalogue/              <- your library.yaml and results/
   inbox/                  <- writable, uploads land here
@@ -50,18 +51,29 @@ anything of yours inside it would be lost. A layout that works:
 node names and an admin password, generates the session secret, and stores only a scrypt hash of the password
 (mode 600). Or copy `sparkvault.env.example` and fill it in by hand.
 
-**4. Create your compose file.** Copy `app/docker-compose.yml` to `/srv/sparkvault/docker-compose.yaml` and edit the
-copy (the lines marked `EDIT`): `context:` (the absolute path of `app/`), `env_file:` (the absolute path of
-`sparkvault.env`), your catalogue, Hugging Face cache and inbox folders, the port, and `user:`, the owner of those
-folders (check with `ls -ldn` on the server, because an NFS-exported share can look open while the underlying
-filesystem is not). You do this once: updates replace only `app/`, never this file.
+**4. Create your compose file.** `docker-compose.yml` in this repo is the one source; you don't hand-edit a copy. Only
+three values belong to your host, and the lines carrying them are marked `# @sv <name>`: `user` (the owner of your
+folders; check with `ls -ldn` on the server, because an NFS-exported share can look open while the underlying
+filesystem is not), `hf_dir` (the Hugging Face cache root, outside your folder) and `port` (only if 8080 is taken).
+Everything else is a relative path inside your folder. Put the three values in a small file (see
+`deploy.example.conf`, keep your real one outside this repo) and generate the compose file:
+
+```bash
+scripts/make-compose.py --values deploy.conf --out /srv/sparkvault/docker-compose.yaml          # shows a diff
+scripts/make-compose.py --values deploy.conf --out /srv/sparkvault/docker-compose.yaml --apply  # writes it
+scripts/make-compose.py --values deploy.conf --out /srv/sparkvault/docker-compose.yaml --check  # exit 1 on drift
+```
+It rewrites only the marked lines, validates the values, keeps the old file as `.bak`, and `--check` is how you notice
+that the deployed file no longer matches the repo's. Relative paths need your Docker or NAS UI to run the file from its
+own folder; if the catalogue page lists no models, the UI is running a copy from somewhere else.
 
 **5. Start it:** `docker compose up -d --build`, or select the compose file in your NAS's Docker/Project UI. If the
 page is empty or errors, check what the container sees:
 `docker exec sparkvault sh -c 'id; ls -ldn /catalogue /hf /inbox'`.
 
-**Updating:** `git pull` (or on your workstation `git pull`, then `scripts/sync-app.sh --dest ... --apply`), then
-rebuild the project. A plain restart reuses the old image.
+**Updating:** `git pull` (or on your workstation `git pull`, then `scripts/sync-app.sh --dest ... --apply`), then restart
+the project: the code is mounted into the container, so a restart picks it up. Rebuild only when `requirements.txt` or
+the `Dockerfile` change. If `docker-compose.yml` itself changed, run `make-compose.py` again and recreate the container.
 
 On a UGOS NAS this runs by building from the copied folder; building straight from a GitHub URL
 (`context: https://github.com/...`) fails there because the NAS's Docker has no `git`.
