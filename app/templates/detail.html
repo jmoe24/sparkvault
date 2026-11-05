@@ -26,7 +26,7 @@
   </div>
 
   {% if evals %}<div class="box"><h2>Judge evaluations ({{ evals|length }})</h2>
-    {% for r in evals %}<details class="eval"{% if loop.first %} open{% endif %}>
+    {% for r in evals %}<details class="eval">
       <summary>{{ r.date }} · {{ r.node }} · {{ r.label }} · overall <b>{{ r.eval.overall_score|num(2) }}</b>
         {% for c, v in (r.eval.per_category or {}).items() %}<span class="chip">{{ c }} {{ v|num(2) }}</span> {% endfor %}
         {% if r._pending %}<span class="chip" title="uploaded, not committed to git yet">pending</span>{% endif %}</summary>

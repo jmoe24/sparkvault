@@ -217,6 +217,7 @@ def test_detail_lists_per_prompt_judgements_and_escapes_the_rationale(authed, en
     assert "correctness 9" in text(h) and "Wrong API." in h
     assert 'class="lowscore"' in h                     # coding-02 averages 5.0, under 7
     assert "<b>bold</b>" not in h and "&lt;b&gt;bold&lt;/b&gt;" in h
+    assert '<details class="eval">' in h and 'class="eval" open' not in h        # collapsed until clicked
 
 
 def test_model_without_per_prompt_data_has_no_judgement_box(authed):
