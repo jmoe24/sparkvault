@@ -1,15 +1,14 @@
-# SparkVault. One compose file for every Docker host, builds from the folder it sits in.
+# SparkVault: compose template. Copy it next to the code folder, edit the copy once, and run that copy.
 #
-#   1. Put this repo's files on the server (git clone there, or clone anywhere and copy them over;
-#      scripts/sync-app.sh does the copy). The Docker daemon needs no git and no internet to build
-#      from a local folder, apart from pulling python and the pip packages.
-#   2. Create the secrets file next to this one:  scripts/init-env.sh   (or copy sparkvault.env.example)
-#   3. Edit the lines marked EDIT below (your three folders, port, uid/gid).
-#   4. docker compose up -d --build        (or select this file in your NAS's Docker/Project UI)
+#   /srv/sparkvault/app/                   the code (git clone, or scripts/sync-app.sh); replaced on every update
+#   /srv/sparkvault/docker-compose.yaml    your edited copy of THIS file; updates never touch it
+#   /srv/sparkvault/sparkvault.env         secrets (scripts/init-env.sh, or copy sparkvault.env.example)
 #
-# Paths are written inline on purpose: they work the same from the CLI and from UIs (UGOS and similar)
-# that do not read a .env next to the file for ${VAR} substitution. The secrets are not in this file;
-# they live in sparkvault.env, which is git-ignored.
+# Edit the lines marked EDIT. Paths are written inline on purpose: they work the same from the CLI and from
+# UIs (UGOS and similar) that do not read a .env next to the file for ${VAR} substitution. Use absolute
+# paths for `context:` and `env_file:` in your copy. The secrets are not in this file.
+# Start: docker compose up -d --build   (or select your copy in your NAS's Docker/Project UI).
+# After a code update, rebuild; a plain restart reuses the old image.
 #
 # The app is plain HTTP and meant for a trusted network. Put it behind a TLS reverse proxy before
 # exposing it further, and then set SPARKVAULT_COOKIE_SECURE=1 in sparkvault.env.
@@ -17,7 +16,7 @@ name: sparkvault
 services:
   sparkvault:
     build:
-      context: .                      # this folder (it must contain the Dockerfile and app/)
+      context: .                      # EDIT in your copy: the absolute path of the code folder (app/ above)
     image: sparkvault:local
     container_name: sparkvault
     restart: unless-stopped

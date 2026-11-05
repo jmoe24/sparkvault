@@ -12,9 +12,9 @@ GB10 "Spark"-class boxes, not tied to them). It gives you:
 It is read-only: one admin login, and the only thing it ever writes is an inbox folder of uploaded
 records. It holds no credential for git, your nodes or Hugging Face.
 
-> Status: the app and its 45 tests run, and the container has been built and run on a UGOS NAS from a copied
-> source folder (see "Deploy"). The reboot behaviour and plain-Linux Docker hosts are untested; a prebuilt image is
-> on the [TODO list](TODO.md).
+> Status: the app and its 45 tests run, and the container runs on a UGOS NAS using the layout described under
+> "Deploy". The reboot behaviour and plain-Linux Docker hosts are untested; a prebuilt image is on the
+> [TODO list](TODO.md).
 
 ## Deploy
 
@@ -22,9 +22,9 @@ You need Docker with Compose on the server, a folder with your catalogue, and th
 nodes use. Everything host-specific is either in `docker-compose.yml` (three folders, port, uid/gid: the lines
 marked `EDIT`) or in one secrets file, `sparkvault.env`.
 
-**1. Get the files onto the server.** Either way works; the compose file builds from the folder it sits in.
+**1. Get the code onto the server.** Either way works.
 
-- *Docker host with git:* `git clone https://github.com/jmoe24/sparkvault.git` on the server.
+- *Docker host with git:* `git clone https://github.com/jmoe24/sparkvault.git /srv/sparkvault/app` on the server.
 - *Anything else (NAS Docker UIs, no git on the server):* clone it on your workstation and copy it over.
   `scripts/sync-app.sh` does the copy: it ships only committed files, dry-runs unless you add `--apply`, and has no
   default destination.
@@ -35,31 +35,36 @@ marked `EDIT`) or in one secrets file, `sparkvault.env`.
   scripts/sync-app.sh --dest /mnt/share/sparkvault/app --init --apply
   ```
 
-  Keep your catalogue, inbox and `sparkvault.env` **next to** that folder, not inside it: a later sync replaces its
-  contents. A layout that works:
+**2. Lay out your own files next to the code, not inside it.** The code folder is replaced on every update, so
+anything of yours inside it would be lost. A layout that works:
 
-  ```
-  /srv/sparkvault/
-    app/              <- the repo copy (docker-compose.yml is in here)
-    catalogue/        <- your library.yaml and results/
-    inbox/            <- writable, uploads land here
-    sparkvault.env    <- secrets, mode 600
-  ```
+```
+/srv/sparkvault/
+  app/                    <- the code (git clone or sync-app.sh). Never edit inside it.
+  docker-compose.yaml     <- YOUR copy of app/docker-compose.yml, edited once
+  sparkvault.env          <- secrets, mode 600
+  catalogue/              <- your library.yaml and results/
+  inbox/                  <- writable, uploads land here
+```
 
-**2. Create the secrets file.** From a clone, `scripts/init-env.sh /srv/sparkvault/sparkvault.env` asks for your
+**3. Create the secrets file.** From a clone, `scripts/init-env.sh /srv/sparkvault/sparkvault.env` asks for your
 node names and an admin password, generates the session secret, and stores only a scrypt hash of the password
 (mode 600). Or copy `sparkvault.env.example` and fill it in by hand.
 
-**3. Edit `docker-compose.yml`** (the `EDIT` lines): your catalogue, Hugging Face cache and inbox folders, the port,
-the `user:` (the owner of those folders; check with `ls -ldn` on the server, because an NFS-exported share can look
-open while the underlying filesystem is not), and `env_file:`. In the layout above the secrets file sits one level up, so set it to its absolute path
-(`/srv/sparkvault/sparkvault.env`); an absolute path also works from UIs that run the file from another folder.
+**4. Create your compose file.** Copy `app/docker-compose.yml` to `/srv/sparkvault/docker-compose.yaml` and edit the
+copy (the lines marked `EDIT`): `context:` (the absolute path of `app/`), `env_file:` (the absolute path of
+`sparkvault.env`), your catalogue, Hugging Face cache and inbox folders, the port, and `user:`, the owner of those
+folders (check with `ls -ldn` on the server, because an NFS-exported share can look open while the underlying
+filesystem is not). You do this once: updates replace only `app/`, never this file.
 
-**4. Start it:** `docker compose up -d --build`, or select the compose file in your NAS's Docker/Project UI. If the
+**5. Start it:** `docker compose up -d --build`, or select the compose file in your NAS's Docker/Project UI. If the
 page is empty or errors, check what the container sees:
 `docker exec sparkvault sh -c 'id; ls -ldn /catalogue /hf /inbox'`.
 
-On a UGOS NAS this has been run by building from the copied folder; building straight from a GitHub URL
+**Updating:** `git pull` (or on your workstation `git pull`, then `scripts/sync-app.sh --dest ... --apply`), then
+rebuild the project. A plain restart reuses the old image.
+
+On a UGOS NAS this runs by building from the copied folder; building straight from a GitHub URL
 (`context: https://github.com/...`) fails there because the NAS's Docker has no `git`.
 
 ### Settings in `sparkvault.env`

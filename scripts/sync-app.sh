@@ -11,8 +11,8 @@
 #
 # Only what is committed (git archive HEAD) is copied, so no .git, no .env, nothing from your working tree.
 # Files in DEST that are no longer in the repo are removed, which is why a DEST that does not already hold a
-# SparkVault copy (Dockerfile and app/) is refused unless you pass --init. Keep your secrets file, catalogue
-# and inbox OUTSIDE DEST (next to it), or they would be deleted. Rebuild the container afterwards.
+# SparkVault copy (Dockerfile and app/) is refused unless you pass --init. Keep your edited compose file, secrets
+# file, catalogue and inbox OUTSIDE DEST (next to it), or they would be deleted. Rebuild the container afterwards.
 set -euo pipefail
 
 dest=${SPARKVAULT_APP_DEST:-}; apply=false; init=false
