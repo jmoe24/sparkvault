@@ -1,0 +1,45 @@
+# SparkVault for UGOS-style "paste a compose file into a Project" UIs. Self-contained: no ${VARS},
+# no .env lookup next to this file. Lines marked EDIT are the ones you change.
+#
+# Secrets and app settings live in ONE file on the NAS (not in this YAML, so they never end up in
+# the project): create it as sparkvault.env (a visible name; UGOS hides files starting with a dot)
+# and chmod 600 it. Contents (see .env.example for what each means):
+#     SPARKVAULT_SECRET_KEY=<openssl rand -hex 32>
+#     SPARKVAULT_ADMIN_HASH=<python3 -m app.hashpw>
+#     SPARKVAULT_INGEST_TOKEN=<openssl rand -hex 32, or empty = upload off>
+#     SPARKVAULT_NODES=node-a,node-b
+#     SPARKVAULT_COOKIE_SECURE=0
+#
+# The app refuses to start if the secret key or admin hash is missing.
+#
+# BUILD SOURCE: the build context is a folder with this repo's code in it. A URL context
+# (https://github.com/jmoe24/sparkvault.git#main) needs a `git` binary in the Docker daemon, which
+# UGOS does not have, so put the source on the NAS first (no git needed on the NAS):
+#     mkdir -p /volume1/docker/sparkvault/src
+#     curl -L https://github.com/jmoe24/sparkvault/archive/refs/heads/main.tar.gz | tar xz --strip-components=1 -C /volume1/docker/sparkvault/src
+# To update the app later, repeat that and rebuild the project.
+name: sparkvault
+services:
+  sparkvault:
+    build:
+      context: /volume1/docker/sparkvault/src                    # EDIT: the folder you put the source in
+    image: sparkvault:local
+    container_name: sparkvault
+    restart: unless-stopped
+    # Run as the owner and group of your folders (EDIT). Check what the NAS really has with
+    # `ls -ldn <folder>` on the NAS itself: an NFS export can look open while the filesystem is not.
+    user: "1000:10"
+    env_file: /volume1/docker/sparkvault/sparkvault.env          # EDIT if you keep it elsewhere
+    environment:
+      SPARKVAULT_CATALOGUE_DIR: /catalogue
+      SPARKVAULT_HF_DIR: /hf
+      SPARKVAULT_INBOX_DIR: /inbox
+    ports:
+      - "8080:8080"                                              # EDIT the LEFT number if 8080 is taken
+    volumes:
+      - /volume1/docker/sparkvault/catalogue:/catalogue:ro       # EDIT: folder with library.yaml + results/
+      - /volume1/PATH/TO/huggingface:/hf:ro                      # EDIT: Hugging Face cache root (contains hub/)
+      - /volume1/docker/sparkvault/inbox:/inbox                  # EDIT: writable; only used if upload is on
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]

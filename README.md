@@ -12,9 +12,10 @@ GB10 "Spark"-class boxes, not tied to them). It gives you:
 It is read-only: one admin login, and the only thing it ever writes is an inbox folder of uploaded
 records. It holds no credential for git, your nodes or Hugging Face.
 
-> Status: the app and its 45 tests run. The Docker image and `docker-compose.yml` have **not been built or
-> run yet** (the author's workstation has no Docker), so treat the container route as unverified and open an
-> issue with what you find.
+> Status: the app and its 45 tests run, and the container has been built and run on a UGOS NAS using
+> `docker-compose.paste.yml` with the source in a local folder. Building straight from the GitHub URL fails
+> there (the NAS's Docker has no `git`); a prebuilt image is on the TODO list. `docker-compose.yml` on a
+> normal Docker host and the reboot behaviour are untested.
 
 ## Quick start
 
@@ -32,7 +33,17 @@ Prefer to do it by hand? Copy `.env.example` to `.env`, fill it in, and generate
 `openssl rand -hex 32` and `python3 -m app.hashpw`.
 
 The compose file needs only itself and `.env`: it builds the image from this GitHub repo (pin a tag or
-commit with `SPARKVAULT_BUILD_CONTEXT`). You do not need a clone on the server.
+commit with `SPARKVAULT_BUILD_CONTEXT`). You do not need a clone on the server, but the Docker daemon there
+needs a `git` binary for a URL build; if it has none, see the UGOS section below.
+
+### UGOS and other "paste a compose file" UIs
+
+Use `docker-compose.paste.yml` instead. It has no `${VARS}` and needs no `.env` next to it: edit the lines marked
+`EDIT` (your three folders, port, uid/gid), then put the secrets and settings in one file on the server
+(`sparkvault.env`, mode 600; a visible name because UGOS hides dotfiles) and point `env_file:` at it. The secrets
+never enter the pasted project. UGOS cannot build from a GitHub URL (its Docker has no `git`), so the paste
+variant builds from a folder: the header of the file shows the one-line download that fills it. Start from
+`sparkvault.env.example` for the secrets file.
 
 ### What you configure (all in `.env`)
 
