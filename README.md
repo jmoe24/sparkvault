@@ -13,8 +13,7 @@ It is read-only: one admin login, and the only thing it ever writes is an inbox 
 records. It holds no credential for git, your nodes or Hugging Face.
 
 > Status: the app and its 45 tests run, and the container runs on a UGOS NAS using the layout described under
-> "Deploy". The reboot behaviour and plain-Linux Docker hosts are untested; a prebuilt image is on the
-> [TODO list](TODO.md).
+> "Deploy"; it came back correctly after a NAS reboot. Plain-Linux Docker hosts are untested.
 
 ## Deploy
 
