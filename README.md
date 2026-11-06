@@ -173,8 +173,12 @@ SparkVault is built for a trusted, self-hosted network, not the open internet.
   `tools/bench-vllm.sh`, builds the record and uploads it) lives in a private homelab repo today. A sanitized,
   variable-driven version belongs here so the whole loop is reproducible.
 - **Same-dataset comparisons.** Records made with the random dataset and with `BENCH_DATASET=prompts` are not
-  comparable. Re-run older models on `prompts` and say which dataset each record used.
-- **Tool-call and replay results** are in the schema but not collected automatically yet.
+  comparable. `scripts/gx10-bench-all.sh --run` (homelab Ansible) now re-runs qwen-agent, lightning, llama-3.3-70b
+  and qwen2.5-7b on `prompts` as `<model>-bench-prompts`; gpt-oss-120b has its own cluster record. Mark the
+  older random-dataset records as superseded once the new ones are committed.
+- **Tool-call and replay results.** `replay-dump.py` (localai) prints a `REPLAY_RESULT` line and
+  `tools/replay-record.py` turns it into a record. The dump is readable only by the `hermes` user, so this stays a
+  manual step per model; it is not part of the benchmark playbook.
 
 ## Development
 
