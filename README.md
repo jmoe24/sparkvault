@@ -172,13 +172,20 @@ SparkVault is built for a trusted, self-hosted network, not the open internet.
 - **Publish the Ansible playbooks.** The deploy and benchmark flow (a playbook that brings a model up, runs
   `tools/bench-vllm.sh`, builds the record and uploads it) lives in a private homelab repo today. A sanitized,
   variable-driven version belongs here so the whole loop is reproducible.
-- **Same-dataset comparisons.** Records made with the random dataset and with `BENCH_DATASET=prompts` are not
-  comparable. `playbooks/gx10_bench_all.yml` (homelab Ansible) now re-runs qwen-agent, lightning, llama-3.3-70b
-  and qwen2.5-7b on `prompts` as `<model>-bench-prompts`; gpt-oss-120b has its own cluster record. Mark the
-  older random-dataset records as superseded once the new ones are committed.
-- **Tool-call and replay results.** `replay-dump.py` (localai) prints a `REPLAY_RESULT` line and
-  `tools/replay-record.py` turns it into a record. The dump is readable only by the `hermes` user, so this stays a
-  manual step per model; it is not part of the benchmark playbook.
+- **Same-dataset comparisons: done 2026-11-06.** qwen-agent, lightning, llama-3.3-70b and qwen2.5-7b were re-run on
+  `BENCH_DATASET=prompts` (`playbooks/gx10_bench_all.yml` in the homelab Ansible, label `<model>-bench-prompts`) and
+  are comparable with the gpt-oss-120b cluster record. The earlier random-dataset records for the three candidates
+  are marked `suspect` and superseded. Keep the dataset in each record's `source`, and re-run on `prompts` for any
+  model added later. Two bench bugs surfaced and are fixed: the prompts dataset needs pandas, which the stock image
+  lacks (the script installs it under `/tmp` of the container), and a warm-up correction understated tok/s by 1/(N+1).
+- **Tool-call and replay results: collected by hand, 2026-11-06.** `replay-dump.py` (localai) prints a
+  `REPLAY_RESULT` line and `tools/replay-record.py` turns it into a record. The captured request is readable only by
+  the `hermes` user, so this is a manual step per model and not part of the benchmark playbook. Results on the one
+  dump (10 requests per variant): qwen-agent, lightning and gpt-oss-120b 20/20; llama-3.3-70b 11/20 (10/10 without
+  the trailing period, 1/10 with it). **Not run:** qwen2.5-7b, whose default context is probably shorter than the
+  dump's roughly 47K-token prompt. The dump is Qwen-shaped, so a pass shows the model follows that one request's
+  tool schema, not that it handles every tool format. Models served at 64K need `REPLAY_MAX_TOKENS` because the dump
+  asks for 65536 output tokens.
 
 ## Development
 
