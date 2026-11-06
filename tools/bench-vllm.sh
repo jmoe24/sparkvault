@@ -127,7 +127,10 @@ if [ -n "$BENCH_JSON" ]; then
   DUR=$(num 'Benchmark duration (s):'); IN=$(num 'Total input tokens:'); CNT=$(num 'Total generated tokens:')
   SRV=""
   if [ -n "${G0:-}" ] && [ -n "${G1:-}" ] && [ "$G1" -ge "$G0" ]; then
-    if [ -n "${SKIP_WARM:-}" ]; then SRV=$((G1 - G0)); else SRV=$(( (G1 - G0) * NUM_PROMPTS / (NUM_PROMPTS + 1) )); fi
+    # The counter delta is used as is. An earlier version scaled it by N/(N+1) to remove a warm-up request, but
+    # on localai/vllm-main (no --skip-initial-test-run) the delta was exactly N x 256 for N=1 and N=4 (2026-11-06,
+    # --ignore-eos, read again 3 s later), so the warm-up adds nothing and the scaling understated every run by 1/(N+1).
+    SRV=$((G1 - G0))
   fi
   GEN="${SRV:-$CNT}"
   if [ -n "$GEN" ]; then
