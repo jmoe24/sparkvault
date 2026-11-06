@@ -82,11 +82,22 @@ if [ -n "$BENCH_HELP" ]; then
   DATASET_ARGS="--dataset-name random --random-input-len 256 --random-output-len $OUT_LEN"
   if [ "$BENCH_DATASET" = prompts ]; then
     docker exec -i "$VLLM_CONTAINER" sh -c 'cat > /tmp/sv-bench-prompts.jsonl' < "$BENCH_PROMPTS"
+    # vLLM's custom dataset reads the file with pandas, which the stock localai/vllm-main image does not have
+    # (the gpt-oss image does). Put pandas and its pure-Python deps in a folder under /tmp of THIS container
+    # only: --no-deps so pip cannot pull a second numpy next to the pinned one, and PYTHONPATH just for the
+    # bench process. The image and site-packages are untouched; a recreated container starts clean.
+    if ! docker exec "$VLLM_CONTAINER" python3 -c 'import pandas' >/dev/null 2>&1; then
+      echo "pandas not in $VLLM_CONTAINER; installing it under /tmp/sv-bench-deps (container only)"
+      docker exec "$VLLM_CONTAINER" pip install -q --no-deps --target /tmp/sv-bench-deps \
+        "pandas<3" python-dateutil pytz tzdata six 2>&1 | redact | tail -5
+      OLD_PP=$(docker exec "$VLLM_CONTAINER" printenv PYTHONPATH 2>/dev/null || true)
+      EXTRA_ENV="-e PYTHONPATH=/tmp/sv-bench-deps${OLD_PP:+:$OLD_PP}"
+    fi
     # the chat endpoint applies the chat template itself, so the client must not
     DATASET_ARGS="--dataset-name custom --dataset-path /tmp/sv-bench-prompts.jsonl --custom-output-len $OUT_LEN --skip-chat-template --disable-shuffle"
   fi
   G0=$(gen_total || true)
-  docker exec -e HF_HUB_OFFLINE=1 "$VLLM_CONTAINER" vllm bench serve \
+  docker exec -e HF_HUB_OFFLINE=1 ${EXTRA_ENV:-} "$VLLM_CONTAINER" vllm bench serve \
     --backend openai-chat \
     --base-url "$BASE_URL" \
     --endpoint /v1/chat/completions \
