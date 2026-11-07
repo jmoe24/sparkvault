@@ -4,20 +4,21 @@ Bring a vLLM model up on your GPU nodes, benchmark it, and file the result in Sp
 one `ansible-playbook` run. This is the deploy, benchmark, record and upload loop the rest of the repo
 describes.
 
-The playbooks were written for two ASUS Ascent GX10 nodes (`gx101`, `gx102`), but nothing in them is
-GX10-specific except the host names used for the two-node cluster roles.
+They manage vLLM containers on any Docker host with NVIDIA GPUs, and were built and used on two ASUS Ascent
+GX10 (NVIDIA GB10 / DGX Spark-class) nodes, which is where the defaults and the two-node cluster flow come
+from. Host names, paths and addresses are all variables or inventory.
 
 ## What is here
 
 | Path | What |
 |---|---|
-| `playbooks/gx10_vllm_status.yml` | Read-only: vllm containers, restart policy, `/health`. Run it first. |
-| `playbooks/gx10_vllm_deploy.yml` | Rolling replace, one node at a time, with a health wait and a smoke completion. `-e sv_bench=true` benchmarks the result. |
-| `playbooks/gx10_vllm_rollback.yml` | Remove a trial container and make sure the standing `vllm-main` runs. |
-| `playbooks/gx10_bench_all.yml` | Deploy, benchmark and roll back every model in `sv_bench_models`, one by one. |
-| `playbooks/gx10_vllm_cluster.yml` | Two-node tensor-parallel (TP-2) with Ray: `up`, `down`, `status`. |
-| `tasks/gx10_bench.yml`, `tasks/gx10_bench_one.yml` | Included by the playbooks above; not run on their own. |
-| `group_vars/gx10.yml` | **Every site-specific setting**, with comments. Edit this one. |
+| `playbooks/vllm_status.yml` | Read-only: vllm containers, restart policy, `/health`. Run it first. |
+| `playbooks/vllm_deploy.yml` | Rolling replace, one node at a time, with a health wait and a smoke completion. `-e sv_bench=true` benchmarks the result. |
+| `playbooks/vllm_rollback.yml` | Remove a trial container and make sure the standing `vllm-main` runs. |
+| `playbooks/vllm_bench_all.yml` | Deploy, benchmark and roll back every model in `sv_bench_models`, one by one. |
+| `playbooks/vllm_cluster.yml` | Two-node tensor-parallel (TP-2) with Ray: `up`, `down`, `status`. |
+| `tasks/vllm_bench.yml`, `tasks/vllm_bench_one.yml` | Included by the playbooks above; not run on their own. |
+| `group_vars/vllm_nodes.yml` | **Every site-specific setting**, with comments. Edit this one. |
 | `inventory.example.yml` | Copy to `inventory.yml` (git-ignored). |
 | `docs/node-setup.md` | One-time setup of each node, design notes and gotchas. |
 
@@ -48,10 +49,10 @@ Set-up steps with the commands are in [docs/node-setup.md](docs/node-setup.md).
 ```bash
 cd ansible
 cp inventory.example.yml inventory.yml     # your node addresses
-$EDITOR group_vars/gx10.yml                # paths, benchmark table, interconnect addresses
+$EDITOR group_vars/vllm_nodes.yml                # paths, benchmark table, interconnect addresses
 ssh-keyscan <node> >> ~/.ssh/known_hosts   # host_key_checking is on in ansible.cfg
-ansible gx10 -m ping
-ansible gx10 -m command -a id              # must list the docker group
+ansible vllm_nodes -m ping
+ansible vllm_nodes -m command -a id              # must list the docker group
 ```
 
 To upload results to SparkVault, export the token and URL in the shell that runs Ansible (never commit
@@ -67,33 +68,33 @@ says it did not upload.
 
 ## Use
 
-Run everything from this `ansible/` folder. `-l gx101` limits a run to one node and is the safest way to try
+Run everything from this `ansible/` folder. `-l node1` limits a run to one node and is the safest way to try
 anything new. `--list-tasks` and `--check` change nothing.
 
 ```bash
 # What is running?
-ansible-playbook playbooks/gx10_vllm_status.yml
+ansible-playbook playbooks/vllm_status.yml
 
 # Redeploy the standing model, one node at a time (a failed node stops the roll):
-ansible-playbook playbooks/gx10_vllm_deploy.yml \
+ansible-playbook playbooks/vllm_deploy.yml \
   -e sv_script=scripts/run-vllm.sh -e sv_container=vllm-main
 
 # Try a candidate on one node (stops vllm-main there until you roll back), and benchmark it:
-ansible-playbook playbooks/gx10_vllm_deploy.yml -l gx102 \
+ansible-playbook playbooks/vllm_deploy.yml -l node2 \
   -e sv_script=scripts/candidates/candidate-a.sh -e sv_container=vllm-test -e sv_stop_main=true \
   -e sv_bench=true -e sv_model=candidate-a
-ansible-playbook playbooks/gx10_vllm_rollback.yml -l gx102
+ansible-playbook playbooks/vllm_rollback.yml -l node2
 
 # Benchmark every row of sv_bench_models, rolling back after each (even on failure):
-ansible-playbook playbooks/gx10_bench_all.yml --list-tasks
-ansible-playbook playbooks/gx10_bench_all.yml
-ansible-playbook playbooks/gx10_bench_all.yml -e sv_only=candidate-a
-ansible-playbook playbooks/gx10_bench_all.yml -e sv_bench_dataset=random
+ansible-playbook playbooks/vllm_bench_all.yml --list-tasks
+ansible-playbook playbooks/vllm_bench_all.yml
+ansible-playbook playbooks/vllm_bench_all.yml -e sv_only=candidate-a
+ansible-playbook playbooks/vllm_bench_all.yml -e sv_bench_dataset=random
 
 # TP-2 across both nodes (takes the standing model off BOTH until `down`):
-ansible-playbook playbooks/gx10_vllm_cluster.yml -e sv_cluster_action=status
-ansible-playbook playbooks/gx10_vllm_cluster.yml -e sv_cluster_action=up -e sv_bench=true -e sv_model=<id>
-ansible-playbook playbooks/gx10_vllm_cluster.yml -e sv_cluster_action=down
+ansible-playbook playbooks/vllm_cluster.yml -e sv_cluster_action=status
+ansible-playbook playbooks/vllm_cluster.yml -e sv_cluster_action=up -e sv_bench=true -e sv_model=<id>
+ansible-playbook playbooks/vllm_cluster.yml -e sv_cluster_action=down
 ```
 
 ### Variables you pass with `-e`
@@ -113,7 +114,7 @@ ansible-playbook playbooks/gx10_vllm_cluster.yml -e sv_cluster_action=down
 
 ## How a benchmark record is made
 
-After a deploy and a smoke test, `tasks/gx10_bench.yml` runs `tools/bench-vllm.sh` on the node (one
+After a deploy and a smoke test, `tasks/vllm_bench.yml` runs `tools/bench-vllm.sh` on the node (one
 single-stream request, then a concurrent run, while sampling the GPU clock), turns its JSON into a record
 that fits `app/results.schema.json`, writes it to `sv_results_dir`, and POSTs it to SparkVault's inbox, where
 it shows as pending until you import it. A record is `ok` only if the run completed with no failed requests and

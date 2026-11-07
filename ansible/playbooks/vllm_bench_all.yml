@@ -1,21 +1,21 @@
 ---
-# Benchmark every model listed in sv_bench_models (group_vars/gx10.yml), one at a time, on the prompts dataset.
-# Per model (tasks/gx10_bench_one.yml): deploy, smoke test,
-# tasks/gx10_bench.yml (writes the record and uploads it to SparkVault), and then ALWAYS roll the
+# Benchmark every model listed in sv_bench_models (group_vars/vllm_nodes.yml), one at a time, on the prompts dataset.
+# Per model (tasks/vllm_bench_one.yml): deploy, smoke test,
+# tasks/vllm_bench.yml (writes the record and uploads it to SparkVault), and then ALWAYS roll the
 # node back to vllm-main, even if the bench failed. The play stops at the first failure, after the
 # rollback. A model whose weights are not on the node is skipped and listed at the end.
 #
-#   ansible-playbook playbooks/gx10_bench_all.yml --list-tasks          # nothing runs
-#   ansible-playbook playbooks/gx10_bench_all.yml                       # every row of sv_bench_models
-#   ansible-playbook playbooks/gx10_bench_all.yml -e sv_only=<model id>
-#   ansible-playbook playbooks/gx10_bench_all.yml -e sv_bench_dataset=random   # old-style numbers
+#   ansible-playbook playbooks/vllm_bench_all.yml --list-tasks          # nothing runs
+#   ansible-playbook playbooks/vllm_bench_all.yml                       # every row of sv_bench_models
+#   ansible-playbook playbooks/vllm_bench_all.yml -e sv_only=<model id>
+#   ansible-playbook playbooks/vllm_bench_all.yml -e sv_bench_dataset=random   # old-style numbers
 #
 # Every record is labelled <model>-bench-<dataset> so ids never collide with the older random-dataset
 # records, and the numbers are comparable with each other and with a cluster record on the same dataset.
-# Not covered: a TP-2 cluster model (takes both nodes offline): gx10_vllm_cluster.yml
+# Not covered: a TP-2 cluster model (takes both nodes offline): vllm_cluster.yml
 # -e sv_bench=true -e sv_bench_dataset=prompts. The other node keeps serving its standing model while one runs.
 - name: Benchmark the single-node catalogue models
-  hosts: gx10
+  hosts: vllm_nodes
   gather_facts: false
   serial: 1
   any_errors_fatal: true
@@ -23,7 +23,7 @@
   vars:
     sv_bench_dataset: prompts
     sv_only: ""          # one model id, or empty for all
-    # sv_bench_models (the table of models, nodes and launch scripts) lives in group_vars/gx10.yml.
+    # sv_bench_models (the table of models, nodes and launch scripts) lives in group_vars/vllm_nodes.yml.
     sv_plan: >-
       {{ sv_bench_models | selectattr('node', 'equalto', inventory_hostname)
          | selectattr('model', 'in', [sv_only] if sv_only | length > 0 else (sv_bench_models | map(attribute='model') | list))
@@ -48,7 +48,7 @@
       failed_when: not sv_env.stat.exists
 
     - name: One model at a time
-      ansible.builtin.include_tasks: ../tasks/gx10_bench_one.yml
+      ansible.builtin.include_tasks: ../tasks/vllm_bench_one.yml
       loop: "{{ sv_plan }}"
       loop_control:
         loop_var: sv_m

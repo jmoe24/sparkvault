@@ -1,12 +1,12 @@
 ---
 # Benchmark the vLLM container that was just deployed and write one result record.
-# Included by gx10_vllm_deploy.yml when -e sv_bench=true (so "deploy a model, then benchmark it" is
+# Included by vllm_deploy.yml when -e sv_bench=true (so "deploy a model, then benchmark it" is
 # one run) and meant to be reused by the cluster playbook later. Not a playbook on its own.
 #
 # Inputs (set by the including playbook): sv_script, sv_container, sv_port, sv_rev (git rev-parse
 # result), sv_model (the catalogue id, an entry of sv_library_file), sv_label (optional), sv_results_dir (group_vars).
 # Optional overrides, used by the TP-2 cluster playbook: sv_bench_base_url (default http://localhost:<sv_port>),
-# sv_bench_node (default the inventory host, e.g. gx101+gx102), sv_bench_topology (default single, or tp2),
+# sv_bench_node (default the inventory host, e.g. head+worker), sv_bench_topology (default single, or tp2),
 # sv_bench_source (the record's `source` text), sv_bench_dataset (random, the default, or prompts = long-form questions from bench-prompts.jsonl, for models that answer random token soup briefly, like gpt-oss-120b; numbers compare only within one dataset).
 #
 # What it does: runs sv_bench_script (tools/bench-vllm.sh in this repo) on the node with BENCH_JSON set, reads the JSON back,
@@ -104,7 +104,7 @@
           } | combine({'gpu_sm_clock_mhz': sv_bench_data.gpu_sm_clock_mhz} if sv_bench_data.gpu_sm_clock_mhz is defined else {})
             | combine({'model_sha': sv_lib_rev} if sv_lib_rev else {}),
           'bench': sv_bench_data.bench,
-          'source': (sv_bench_source | default('ansible gx10_vllm_deploy.yml sv_bench=true')) ~ ' (' ~ sv_bench_script ~ ', ' ~ ('long-form prompts, 256 out' if (sv_bench_dataset | default('random')) == 'prompts' else 'random 256/256') ~ ' x ' ~ sv_bench_data.bench.concurrent.num_prompts | default('?') ~ ' prompts' ~ ('; output tok/s from the server token counter' if sv_bench_data.output_from_server | default(false) else '') ~ ')'
+          'source': (sv_bench_source | default('ansible vllm_deploy.yml sv_bench=true')) ~ ' (' ~ sv_bench_script ~ ', ' ~ ('long-form prompts, 256 out' if (sv_bench_dataset | default('random')) == 'prompts' else 'random 256/256') ~ ' x ' ~ sv_bench_data.bench.concurrent.num_prompts | default('?') ~ ' prompts' ~ ('; output tok/s from the server token counter' if sv_bench_data.output_from_server | default(false) else '') ~ ')'
         } | combine({'validity_note': sv_bench_notes | join('; ')} if sv_bench_notes | length > 0 else {})
       }}
   vars:

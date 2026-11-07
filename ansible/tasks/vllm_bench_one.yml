@@ -1,9 +1,9 @@
 ---
-# One model of gx10_bench_all.yml: deploy it, benchmark it on the prompts dataset, and always put the
+# One model of vllm_bench_all.yml: deploy it, benchmark it on the prompts dataset, and always put the
 # node back on vllm-main afterwards. Not a playbook on its own.
 #
 # Input: sv_m = {model, script, container, stop_main, weights} (one row of sv_bench_models).
-# The deploy steps mirror playbooks/gx10_vllm_deploy.yml; keep them in step with it (the launch
+# The deploy steps mirror playbooks/vllm_deploy.yml; keep them in step with it (the launch
 # script stays the source of truth for the serve command, this never builds one).
 
 - name: "{{ sv_m.model }}, are the weights on {{ inventory_hostname }}?"
@@ -80,14 +80,14 @@
       no_log: true     # the command line carries the key
 
     - name: Benchmark and write the record
-      ansible.builtin.include_tasks: gx10_bench.yml
+      ansible.builtin.include_tasks: vllm_bench.yml
 
     - name: Note the benchmarked model
       ansible.builtin.set_fact:
         sv_done: "{{ (sv_done | default([])) + [sv_m.model] }}"
 
   always:
-    # Whatever happened above, leave the node serving vllm-main (same steps as gx10_vllm_rollback.yml).
+    # Whatever happened above, leave the node serving vllm-main (same steps as vllm_rollback.yml).
     # A failure in here is fatal and says so: the node may have no model.
     - name: Rollback, remove the trial container
       ansible.builtin.command:

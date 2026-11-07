@@ -1,12 +1,21 @@
 ---
-# Copy to inventory.yml (git-ignored) and put your own addresses in it.
-# The two cluster roles are fixed by name: gx101 = Ray head + API, gx102 = worker. Single-node
-# playbooks work with any host names in the `gx10` group; the cluster playbook needs these two.
+# Copy to inventory.yml (git-ignored) and put your own addresses in it. Host names are yours to choose.
+#
+# vllm_nodes  every host the playbooks manage (single-node playbooks target this group).
+# vllm_head / vllm_worker  only for vllm_cluster.yml (two-node tensor parallel): exactly one host in
+#             each. The head runs Ray and serves the API. Leave them out if you do not use the cluster.
 all:
   children:
-    gx10:
-      hosts:
-        gx101:
-          ansible_host: gx101.example.lan   # DNS name or IP of node 1
-        gx102:
-          ansible_host: gx102.example.lan   # DNS name or IP of node 2
+    vllm_nodes:
+      children:
+        vllm_head:
+          hosts:
+            node1:
+              ansible_host: node1.example.lan   # DNS name or IP
+        vllm_worker:
+          hosts:
+            node2:
+              ansible_host: node2.example.lan
+      # A single-node setup can list hosts directly instead:
+      # hosts:
+      #   spark1: {ansible_host: spark1.example.lan}

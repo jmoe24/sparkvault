@@ -170,7 +170,7 @@ SparkVault is built for a trusted, self-hosted network, not the open internet.
 ## Open work
 
 - **Ansible playbooks: published in [`ansible/`](ansible/README.md).** Sanitized and variable-driven (site values in
-  `group_vars/gx10.yml`, secrets from the environment). Syntax-checked and `--list-tasks` only: the sanitized copy has not
+  `group_vars/vllm_nodes.yml`, secrets from the environment). Syntax-checked and `--list-tasks` only: the sanitized copy has not
   been run against nodes, so expect small path fixes on first use.
 - **Same-dataset comparisons: done 2026-11-06.** qwen-agent, lightning, llama-3.3-70b and qwen2.5-7b were re-run on
   `BENCH_DATASET=prompts` (`playbooks/gx10_bench_all.yml` in the homelab Ansible, label `<model>-bench-prompts`) and

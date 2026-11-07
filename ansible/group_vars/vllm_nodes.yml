@@ -1,5 +1,5 @@
 ---
-# Variables for the GPU nodes (inventory group `gx10`). Everything site-specific lives here or in
+# Variables for the GPU nodes (inventory group `vllm_nodes`). Everything site-specific lives here or in
 # inventory.yml; the playbooks contain no addresses, accounts or secrets. Override any value per
 # run with -e. See ../README.md for what each one does.
 
@@ -28,23 +28,23 @@ sv_env_file: /etc/sparkvault/vllm.env
 sv_health_retries: 90
 sv_health_delay: 10
 
-# --- single-node benchmark table (gx10_bench_all.yml) -------------------------------------------
+# --- single-node benchmark table (vllm_bench_all.yml) -------------------------------------------
 # One row per model. `weights` is a path that proves the weights are on that node (the model is
 # skipped and listed if it is missing). `stop_main: true` for candidates that run as vllm-test
 # beside nothing else; the row for the standing model redeploys vllm-main instead.
 # These rows are examples: replace them with your own.
 sv_bench_models:
-  - {model: standing-model, node: gx101, script: scripts/run-vllm.sh, container: vllm-main, stop_main: false, weights: /opt/models/standing-model}
-  - {model: candidate-a,    node: gx101, script: scripts/candidates/candidate-a.sh, container: vllm-test, stop_main: true, weights: /opt/models/candidate-a/config.json}
+  - {model: standing-model, node: node1, script: scripts/run-vllm.sh, container: vllm-main, stop_main: false, weights: /opt/models/standing-model}
+  - {model: candidate-a,    node: node1, script: scripts/candidates/candidate-a.sh, container: vllm-test, stop_main: true, weights: /opt/models/candidate-a/config.json}
 
-# --- TP-2 cluster (gx10_vllm_cluster.yml) ---------------------------------------------------------
-# The inventory host names must be gx101 (Ray head and API) and gx102 (worker): the cluster
-# playbook and your cluster launch script both assume these two roles.
-# QSFP / interconnect addresses of the two nodes. EXAMPLE values: set your own, they must match
+# --- TP-2 cluster (vllm_cluster.yml) ---------------------------------------------------------
+# The cluster roles come from the inventory: one host in group vllm_head (Ray head and API) and one
+# in vllm_worker. Your cluster launch script must use the same roles.
+# Interconnect addresses (e.g. the QSFP link on spark-like boxes) of the two nodes. EXAMPLE values: set your own, they must match
 # your netplan and your cluster launch script.
-sv_qsfp_ips:
-  gx101: 10.100.0.2
-  gx102: 10.100.0.1
+sv_cluster_ips:           # keyed by inventory host name
+  node1: 10.100.0.2
+  node2: 10.100.0.1
 sv_cluster_image: vllm-node-mxfp4    # must already be on both nodes
 sv_cluster_health_retries: 120
 # Text shown in the firewall-check failure message: how to apply the host INPUT rules on a node.

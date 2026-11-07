@@ -1,9 +1,9 @@
 ---
-# Read-only. Shows which vllm container runs on each GX10, restart policy, image, and whether
+# Read-only. Shows which vllm container runs on each node, restart policy, image, and whether
 # /health answers. Changes nothing, so it is the first thing to run against a new node.
-#   ansible-playbook playbooks/gx10_vllm_status.yml [-l gx101]
-- name: GX10 vLLM status
-  hosts: gx10
+#   ansible-playbook playbooks/vllm_status.yml [-l node1]
+- name: vLLM status
+  hosts: vllm_nodes
   gather_facts: false
 
   tasks:

@@ -1,17 +1,17 @@
 ---
 # TP-2 (Ray) across both nodes via scripts/run-vllm-cluster.sh. The one deployment that takes
 # local-general off BOTH nodes (the script stops vllm-main on each). Worker first, then head;
-# down is the reverse. Head = gx101 (its QSFP address is sv_qsfp_ips), worker = gx102, fixed by the script.
-#   ansible-playbook playbooks/gx10_vllm_cluster.yml -e sv_cluster_action=status
-#   ansible-playbook playbooks/gx10_vllm_cluster.yml -e sv_cluster_action=up
-#   ansible-playbook playbooks/gx10_vllm_cluster.yml -e sv_cluster_action=up -e sv_bench=true -e sv_model=gpt-oss-120b   # up, then benchmark
-#   ansible-playbook playbooks/gx10_vllm_cluster.yml -e sv_cluster_action=down     # ROLLBACK
-# LAN-reachable API for a gateway such as LiteLLM: add  -e sv_api_host=<gx101 LAN address> -e sv_input_rules_applied=true
+# down is the reverse. Head = the host in group vllm_head, worker = the host in vllm_worker (addresses in sv_cluster_ips).
+#   ansible-playbook playbooks/vllm_cluster.yml -e sv_cluster_action=status
+#   ansible-playbook playbooks/vllm_cluster.yml -e sv_cluster_action=up
+#   ansible-playbook playbooks/vllm_cluster.yml -e sv_cluster_action=up -e sv_bench=true -e sv_model=gpt-oss-120b   # up, then benchmark
+#   ansible-playbook playbooks/vllm_cluster.yml -e sv_cluster_action=down     # ROLLBACK
+# LAN-reachable API for a gateway such as LiteLLM: add  -e sv_api_host=<head LAN address> -e sv_input_rules_applied=true
 # AFTER `the host INPUT-rules script (sv_input_rules_apply_hint) on both nodes; run its remove step on both after `down`.
 #
-# `up` runs a read-only preflight on BOTH nodes first (image, pinned weights, QSFP address,
+# `up` runs a read-only preflight on BOTH nodes first (image, pinned weights, interconnect address,
 # link to the worker), so nothing is stopped unless the cluster can plausibly start. After the
-# head starts it waits for /health on the QSFP address and runs a smoke completion. If that
+# head starts it waits for /health on the interconnect address and runs a smoke completion. If that
 # fails the playbook stops and tells you to run `down`; it does not roll back by itself.
 # `down` waits for vllm-main to be healthy again on both nodes.
 #
@@ -25,7 +25,7 @@
 #   The probe runs from this server, so it only proves the rules for sources the rules drop; the gateway
 #   LXC (allowed on :8000 only) and any ALLOW=PORT:SOURCE exception are by design not covered.
 # The cluster container is --restart no on purpose: a reboot mid-trial brings nothing back, run
-# `down` (see your vLLM notes). The head binds the QSFP address only unless API_HOST is set, which needs
+# `down` (see your vLLM notes). The head binds the interconnect address only unless API_HOST is set, which needs
 # the host INPUT rule first (see the script header), so a gateway cannot reach it by default.
 - name: Cluster, validate the action
   hosts: localhost
@@ -39,7 +39,7 @@
           - sv_api_host is match('^[0-9]{1,3}([.][0-9]{1,3}){3}$')
           - (sv_input_rules_applied | default(false)) | bool
         fail_msg: >-
-          -e sv_api_host=<gx101 LAN address> binds the head's API to the LAN, and host networking bypasses
+          -e sv_api_host=<head LAN address> binds the head's API to the LAN, and host networking bypasses
           DOCKER-USER. Run `{{ sv_input_rules_apply_hint }}` on BOTH nodes first, then pass
           -e sv_input_rules_applied=true (this playbook cannot check the rules: it has no root).
       when: sv_cluster_action == 'up' and (sv_api_host | default('')) | length > 0
@@ -52,7 +52,7 @@
         fail_msg: "sv_mxfp4_layers must be a comma list like moe,qkv,o (tuning override, default = the script's)"
 
 - name: Cluster, preflight on both nodes (read-only)
-  hosts: gx101:gx102
+  hosts: vllm_head:vllm_worker
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -84,15 +84,15 @@
           register: sv_weights
           changed_when: false
 
-        - name: This node has its QSFP address
-          ansible.builtin.shell: "ip -4 -o addr show | grep -q 'inet {{ sv_qsfp_ips[inventory_hostname] }}/'"
+        - name: This node has its interconnect address
+          ansible.builtin.shell: "ip -4 -o addr show | grep -q 'inet {{ sv_cluster_ips[inventory_hostname] }}/'"
           changed_when: false
 
-        - name: Head can reach the worker over the QSFP link
+        - name: Head can reach the worker over the interconnect link
           ansible.builtin.command:
-            argv: [ping, -c, "2", -W, "2", "{{ sv_qsfp_ips['gx102'] }}"]
+            argv: [ping, -c, "2", -W, "2", "{{ sv_cluster_ips[groups['vllm_worker'][0]] }}"]
           changed_when: false
-          when: inventory_hostname == 'gx101'
+          when: inventory_hostname in groups['vllm_head']
 
         # Firewall check: see the header. A listener that nothing can reach from the LAN proves the DROP rule.
         - name: Firewall check, open a throwaway listener on this node (exits by itself after 40 s)
@@ -147,8 +147,8 @@
             success_msg: "{{ inventory_hostname }}: high ports are not reachable from the LAN (rules in effect)"
           when: not (sv_skip_rules_check | default(false)) | bool
 
-- name: Cluster, worker (gx102) up or status
-  hosts: gx102
+- name: Cluster, worker up or status
+  hosts: vllm_worker
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -165,8 +165,8 @@
         var: sv_worker.stdout_lines
       when: sv_worker is not skipped
 
-- name: Cluster, head (gx101)
-  hosts: gx101
+- name: Cluster, head
+  hosts: vllm_head
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -190,12 +190,12 @@
           ansible.builtin.debug:
             var: sv_head.stdout_lines
 
-        - name: Wait for the cluster API, failing fast if the container dies (bound to the QSFP address)
+        - name: Wait for the cluster API, failing fast if the container dies (bound to the interconnect address)
           ansible.builtin.shell: |
             for i in $(seq 1 {{ sv_cluster_health_retries }}); do
               [ "$(docker inspect -f '{% raw %}{{.State.Running}}{% endraw %}' vllm-cluster 2>/dev/null)" = true ] \
                 || { echo "vllm-cluster is not running (engine died); read its logs, redacted"; exit 1; }
-              curl -fsS --noproxy "*" -m 5 -o /dev/null http://{{ sv_api_host | default(sv_qsfp_ips['gx101']) }}:8000/health && exit 0
+              curl -fsS --noproxy "*" -m 5 -o /dev/null http://{{ sv_api_host | default(sv_cluster_ips[groups['vllm_head'][0]]) }}:8000/health && exit 0
               sleep 10
             done
             echo "timed out waiting for /health"; exit 1
@@ -228,7 +228,7 @@
           ansible.builtin.shell: |
             set -euo pipefail
             set -a; . "{{ sv_env_file }}"; set +a
-            base=http://{{ sv_api_host | default(sv_qsfp_ips['gx101']) }}:8000
+            base=http://{{ sv_api_host | default(sv_cluster_ips[groups['vllm_head'][0]]) }}:8000
             model=$(curl -fsS --noproxy "*" -H "Authorization: Bearer $VLLM_API_KEY" "$base/v1/models" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"][0]["id"])')
             curl -fsS --noproxy "*" -H "Authorization: Bearer $VLLM_API_KEY" -H 'Content-Type: application/json' \
               -d "{\"model\":\"$model\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the single word: ready\"}],\"max_tokens\":512,\"temperature\":0}" \
@@ -243,7 +243,7 @@
 
         - name: Cluster is serving
           ansible.builtin.debug:
-            msg: "TP-2 cluster healthy on {{ sv_api_host | default(sv_qsfp_ips['gx101']) }}:8000, {{ sv_smoke.stdout }}"
+            msg: "TP-2 cluster healthy on {{ sv_api_host | default(sv_cluster_ips[groups['vllm_head'][0]]) }}:8000, {{ sv_smoke.stdout }}"
           when: sv_cluster_action == 'up'
       rescue:
         - name: The cluster did not come up cleanly
@@ -254,7 +254,7 @@
               vllm-main on both). Do not paste container logs unfiltered (they contain the key).
 
 - name: Cluster, benchmark (only with -e sv_bench=true -e sv_model=<id>, after a successful up)
-  hosts: gx101
+  hosts: vllm_head
   gather_facts: false
   any_errors_fatal: true
   tasks:
@@ -266,21 +266,21 @@
           register: sv_rev
           changed_when: false
 
-        # The bench runs on the head against its QSFP address (the API binds nothing else). Both nodes
-        # are TP-2 members, so the record's node is gx101+gx102. The GPU clock is sampled on gx101 only.
+        # The bench runs on the head against its interconnect address (the API binds nothing else). Both nodes
+        # are TP-2 members, so the record's node is head+worker. The GPU clock is sampled on the head only.
         - name: Benchmark the cluster and write the record
-          ansible.builtin.include_tasks: ../tasks/gx10_bench.yml
+          ansible.builtin.include_tasks: ../tasks/vllm_bench.yml
           vars:
             sv_script: scripts/run-vllm-cluster.sh
             sv_container: vllm-cluster
             sv_port: 8000
-            sv_bench_base_url: "http://{{ sv_api_host | default(sv_qsfp_ips['gx101']) }}:8000"
-            sv_bench_node: gx101+gx102
+            sv_bench_base_url: "http://{{ sv_api_host | default(sv_cluster_ips[groups['vllm_head'][0]]) }}:8000"
+            sv_bench_node: "{{ groups['vllm_head'][0] }}+{{ groups['vllm_worker'][0] }}"
             sv_bench_topology: tp2
-            sv_bench_source: ansible gx10_vllm_cluster.yml sv_bench=true
+            sv_bench_source: ansible vllm_cluster.yml sv_bench=true
 
 - name: Cluster, worker down (after the head)
-  hosts: gx102
+  hosts: vllm_worker
   gather_facts: false
   tasks:
     - name: Worker down
@@ -290,7 +290,7 @@
       when: sv_cluster_action == 'down'
 
 - name: Cluster, after down, vllm-main must be healthy again on both nodes
-  hosts: gx101:gx102
+  hosts: vllm_head:vllm_worker
   gather_facts: false
   tasks:
     - name: Wait for /health on 8000

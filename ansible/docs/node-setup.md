@@ -1,7 +1,7 @@
 # Node setup and notes
 
 One-time steps per GPU node, done by hand as an administrator (an Ansible run would need the account it is
-creating). Names below match `group_vars/gx10.yml`; change them there if you change them here.
+creating). Names below match `group_vars/vllm_nodes.yml`; change them there if you change them here.
 
 ## 1. The `ansible` account
 
@@ -53,15 +53,15 @@ a copy.
 ## 4. Check it
 
 ```bash
-ansible gx10 -m ping
-ansible gx10 -m command -a id          # must list docker
-ansible-playbook playbooks/gx10_vllm_status.yml
+ansible vllm_nodes -m ping
+ansible vllm_nodes -m command -a id          # must list docker
+ansible-playbook playbooks/vllm_status.yml
 ```
 
 ## TP-2 cluster
 
-`gx10_vllm_cluster.yml` needs: the inventory names `gx101` (Ray head and API) and `gx102` (worker); the two
-interconnect addresses in `sv_qsfp_ips` configured on the nodes; the image `sv_cluster_image` on both nodes
+`vllm_cluster.yml` needs: one inventory host in group `vllm_head` (Ray head and API) and one in `vllm_worker`; the two
+interconnect addresses in `sv_cluster_ips` configured on the nodes; the image `sv_cluster_image` on both nodes
 (`up` checks before it stops anything); and a `scripts/run-vllm-cluster.sh` that takes `up head`, `up worker`,
 `down` and `status`, reads `MXFP4_LAYERS` / `API_HOST` from its environment if you use `sv_mxfp4_layers` /
 `sv_api_host`, and restarts `vllm-main` on `down`.

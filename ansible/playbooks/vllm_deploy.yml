@@ -1,18 +1,18 @@
 ---
-# Rolling replace of a single-node vLLM container, one GX10 at a time (serial: 1), so the
+# Rolling replace of a single-node vLLM container, one node at a time (serial: 1), so the
 # other node keeps serving local-general. A node that does not come back healthy stops the
-# roll: the second node is never touched. Rollback is gx10_vllm_rollback.yml.
+# roll: the second node is never touched. Rollback is vllm_rollback.yml.
 #
-#   ansible-playbook playbooks/gx10_vllm_deploy.yml \
+#   ansible-playbook playbooks/vllm_deploy.yml \
 #     -e sv_script=scripts/run-vllm.sh -e sv_container=vllm-main            # whole fleet
-#   ansible-playbook playbooks/gx10_vllm_deploy.yml -l gx102 \
+#   ansible-playbook playbooks/vllm_deploy.yml -l node2 \
 #     -e sv_script=scripts/candidates/llama-3.3-70b.sh -e sv_container=vllm-test -e sv_stop_main=true
 #
 # Runs the repo's own launch script on the node. The script is the source of truth for the
 # serve command (do not "tidy" it); this playbook never builds a command line.
 # The API key is read on the node from sv_env_file, never passed through Ansible.
-- name: Rolling replace of a GX10 vLLM container
-  hosts: gx10
+- name: Rolling replace of a vLLM container
+  hosts: vllm_nodes
   gather_facts: false
   serial: 1
   any_errors_fatal: true
@@ -112,7 +112,7 @@
       no_log: true     # the command line carries the key
 
     - name: Benchmark the container that just came up
-      ansible.builtin.include_tasks: ../tasks/gx10_bench.yml
+      ansible.builtin.include_tasks: ../tasks/vllm_bench.yml
       when: sv_bench | bool
 
     - name: Done

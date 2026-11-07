@@ -1,10 +1,10 @@
 ---
 # Back to the standing configuration: remove a trial container and make sure vllm-main runs.
 # Safe to run when nothing is wrong (it then only checks /health). Serial, so one node keeps
-# serving. For a TP-2 cluster use gx10_vllm_cluster.yml with sv_cluster_action=down.
-#   ansible-playbook playbooks/gx10_vllm_rollback.yml [-l gx101]
-- name: Roll a GX10 back to vllm-main
-  hosts: gx10
+# serving. For a TP-2 cluster use vllm_cluster.yml with sv_cluster_action=down.
+#   ansible-playbook playbooks/vllm_rollback.yml [-l node1]
+- name: Roll a node back to vllm-main
+  hosts: vllm_nodes
   gather_facts: false
   serial: 1
   any_errors_fatal: true
