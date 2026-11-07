@@ -1,161 +1,90 @@
 # SparkVault
 
-A small, self-hosted model registry for GPU nodes that serve models with vLLM (built on NVIDIA
-GB10 "Spark"-class boxes, not tied to them). It gives you:
+**A self-hosted registry of the models you run on your own GPUs, and what they actually do there.**
 
-- a **catalogue** of the models you run, try and reject (`library.yaml`), with serve recipes kept as data;
-- **benchmark and eval results** per model and node (`results/*.json`), with a headline number per model;
-- a **cache drift view** that compares the catalogue with the Hugging Face cache on your shared storage
-  (`ok`, `drift`, `unpinned`, `broken` links or `.incomplete` files, `missing`, `absent`, `stale`, uncatalogued);
-- an optional **result upload** endpoint so benchmark jobs can file their own records.
+SparkVault keeps one place for the answers you otherwise lose in terminal scrollback and chat logs: which models
+you have tried, which one is live, how fast each runs on *your* nodes, how well it answers, whether it handles
+tool calls, and whether the weights on disk are the ones you think they are. It is built for small teams and home
+labs that serve open-weight models with [vLLM](https://github.com/vllm-project/vllm) (it was built on NVIDIA GB10
+"Spark"-class boxes and is not tied to them).
 
-It is read-only: one admin login, and the only thing it ever writes is an inbox folder of uploaded
-records. It holds no credential for git, your nodes or Hugging Face.
+![The catalogue as a table](docs/images/catalogue-table.png)
 
-> Status: the app and its 45 tests run, and the container runs on a UGOS NAS using the layout described under
-> "Deploy"; it came back correctly after a NAS reboot. Plain-Linux Docker hosts are untested.
+## Why a self-hosted registry
 
-## Deploy
+**The numbers that matter are the ones from your hardware.** Throughput and quality depend on the node, the driver,
+the container image, the serve flags and even the GPU clock. A leaderboard cannot tell you what a model does on
+your box. SparkVault records each run with where and how it was made, so you can compare models fairly and look
+back later.
 
-You need Docker with Compose on the server, a folder with your catalogue, and the Hugging Face cache the
-nodes use. Everything host-specific is either in three marked lines of `docker-compose.yml` (uid/gid, the Hugging
-Face folder, the port: filled in by `scripts/make-compose.py` from a small values file) or in one secrets file,
-`sparkvault.env`.
+**Measurements go wrong, and the record should say so.** In the data behind the screenshots, one run on a
+clamped GPU clock reported 40.7 tokens/s for a model that does 90.3 once the clock was fixed. Another benchmark
+tool counted only visible text and reported about a third of what a reasoning model really generated.
+SparkVault keeps both runs, marks the first one **suspect** with its reason, and never uses a suspect run as a
+model's headline number. Provenance travels with every result: dataset, topology, recipe commit, GPU clock.
 
-**1. Get the code onto the server.** Either way works.
+**Your data stays plain files you own.** The catalogue is a `library.yaml` and a folder of JSON records. You keep it in
+your own git repo, review changes like code, and back it up like code. There is no database and nothing to migrate.
+The app only reads those files.
 
-- *Docker host with git:* `git clone https://github.com/jmoe24/sparkvault.git /srv/sparkvault/app` on the server.
-- *Anything else (NAS Docker UIs, no git on the server):* clone it on your workstation and copy it over.
-  `scripts/sync-app.sh` does the copy: it ships only committed files, dry-runs unless you add `--apply`, and has no
-  default destination.
+**Large model files drift quietly.** Weights are tens of gigabytes, copied between nodes and a shared cache. The
+cache view compares the catalogue with the Hugging Face cache on your storage and flags a revision that moved,
+broken links, interrupted downloads and models that are catalogued but absent.
 
-  ```bash
-  git clone https://github.com/jmoe24/sparkvault.git && cd sparkvault
-  scripts/sync-app.sh --dest /mnt/share/sparkvault/app --init            # dry run, first copy
-  scripts/sync-app.sh --dest /mnt/share/sparkvault/app --init --apply
-  ```
+**It runs where your models live, and trusts almost nothing.** It is a small server-rendered web app (no
+JavaScript) meant for a trusted network, for example the NAS next to your GPU nodes. It is read-only: one admin
+login, read-only mounts, and the one thing it ever writes is an inbox folder of uploaded results. It holds no
+credential for git, your nodes or Hugging Face, and calls no external service.
 
-**2. Lay out your own files next to the code, not inside it.** The code folder is replaced on every update, so
-anything of yours inside it would be lost. A layout that works:
+**It is the record, not the runtime.** SparkVault does not serve models, schedule jobs or deploy anything from its
+UI. The companion Ansible playbooks in [`ansible/`](ansible/README.md) do the deploying and benchmarking on your
+nodes and file the results here.
 
-```
-/srv/sparkvault/
-  app/                    <- the code (git clone or sync-app.sh). Never edit inside it.
-  docker-compose.yaml     <- generated from app/docker-compose.yml by scripts/make-compose.py
-  sparkvault.env          <- secrets, mode 600
-  catalogue/              <- your library.yaml and results/
-  inbox/                  <- writable, uploads land here
-```
+## What you get
 
-**3. Create the secrets file.** From a clone, `scripts/init-env.sh /srv/sparkvault/sparkvault.env` asks for your
-node names and an admin password, generates the session secret, and stores only a scrypt hash of the password
-(mode 600). Or copy `sparkvault.env.example` and fill it in by hand.
+- A **catalogue** of the models you run, try and reject, with status, pinned revision, which nodes hold a copy, notes,
+  and serve recipes kept as data. A recipe is checked token for token against your real launch script, so the
+  catalogue cannot silently disagree with what you run.
+- **Benchmark, eval and replay results** per model and node, with a headline number per model, the full history, and
+  per-prompt judge evaluations.
+- A **cache drift view** against the Hugging Face cache on your shared storage.
+- An optional, token-protected **result upload** endpoint so benchmark jobs can file their own records, which wait as
+  *pending* until you commit them.
+- Tools to measure a model, build records, import uploads and render a Markdown report, and **Ansible playbooks** that
+  deploy a model, benchmark it, record the result and roll the node back.
 
-**4. Create your compose file.** `docker-compose.yml` in this repo is the one source; you don't hand-edit a copy. Only
-three values belong to your host, and the lines carrying them are marked `# @sv <name>`: `user` (the owner of your
-folders; check with `ls -ldn` on the server, because an NFS-exported share can look open while the underlying
-filesystem is not), `hf_dir` (the Hugging Face cache root, outside your folder) and `port` (only if 8080 is taken).
-Everything else is a relative path inside your folder. Put the three values in a small file (see
-`deploy.example.conf`, keep your real one outside this repo) and generate the compose file:
+![The catalogue as cards](docs/images/catalogue-cards.png)
 
-```bash
-scripts/make-compose.py --values deploy.conf --out /srv/sparkvault/docker-compose.yaml          # shows a diff
-scripts/make-compose.py --values deploy.conf --out /srv/sparkvault/docker-compose.yaml --apply  # writes it
-scripts/make-compose.py --values deploy.conf --out /srv/sparkvault/docker-compose.yaml --check  # exit 1 on drift
-```
-It rewrites only the marked lines, validates the values, keeps the old file as `.bak`, and `--check` is how you notice
-that the deployed file no longer matches the repo's. Relative paths need your Docker or NAS UI to run the file from its
-own folder; if the catalogue page lists no models, the UI is running a copy from somewhere else.
+![A model page: headline, results history, cache state and card](docs/images/model-detail.png)
 
-**5. Start it:** `docker compose up -d --build`, or select the compose file in your NAS's Docker/Project UI. If the
-page is empty or errors, check what the container sees:
-`docker exec sparkvault sh -c 'id; ls -ldn /catalogue /hf /inbox'`.
+## Get started
 
-**Updating:** `git pull` (or on your workstation `git pull`, then `scripts/sync-app.sh --dest ... --apply`), then restart
-the project: the code is mounted into the container, so a restart picks it up. Rebuild only when `requirements.txt` or
-the `Dockerfile` change. If `docker-compose.yml` itself changed, run `make-compose.py` again and recreate the container.
+[**INSTRUCTIONS.md**](INSTRUCTIONS.md) covers deploying it (Docker, including on a NAS), loading
+your catalogue, using each page, getting results in, and troubleshooting. The playbooks have their own guide in
+[`ansible/README.md`](ansible/README.md).
 
-On a UGOS NAS this runs by building from the copied folder; building straight from a GitHub URL
-(`context: https://github.com/...`) fails there because the NAS's Docker has no `git`.
+## Status: v1
 
-### Settings in `sparkvault.env`
+SparkVault v1 reads and records; it does not deploy from the UI. What has been exercised:
 
-| Variable | Meaning |
-|---|---|
-| `SPARKVAULT_SECRET_KEY` | **Required.** Signs the session cookie (32+ characters). |
-| `SPARKVAULT_ADMIN_HASH` | **Required.** scrypt hash of the admin password (`python3 -m app.hashpw`). |
-| `SPARKVAULT_NODES` | Node names for the filter and for result records, e.g. `spark-1,spark-2`. Default `node-a,node-b`. |
-| `SPARKVAULT_INGEST_TOKEN` | Turns result upload on (32+ chars). Empty = the endpoint returns 404. |
-| `SPARKVAULT_COOKIE_SECURE` | Set to `1` once served over HTTPS. |
+- The app and its 63 tests pass. The container runs on a UGOS NAS using the layout in INSTRUCTIONS.md and came
+  back correctly after a NAS reboot.
+- The Ansible playbooks have run against a real two-node setup: status, rollback, redeploying the standing model,
+  and deploying, benchmarking and rolling back a candidate, with the record uploaded to the inbox and imported.
 
-### Getting your catalogue onto the server
+Known limits:
 
-If the server is not the machine you edit on, `scripts/sync-catalogue.sh` copies `library.yaml` and
-`results/` to a destination **you** give it (a mounted share or `user@host:/path`). There is no default
-destination, it dry-runs unless you add `--apply`, and it validates your records first. Start from `examples/`:
-
-```bash
-cp -r examples ~/my-catalogue                       # edit library.yaml, add your own results/
-scripts/sync-catalogue.sh --src ~/my-catalogue --dest /mnt/share/sparkvault/catalogue --init          # dry run
-scripts/sync-catalogue.sh --src ~/my-catalogue --dest /mnt/share/sparkvault/catalogue --init --apply
-```
-
-(`--init` is only for the first copy into an empty folder.) The container mounts the catalogue read-only and
-re-reads it when files change, so no restart is needed.
-
-## Catalogue format
-
-See `examples/library.yaml` (models, status `active|testing|rejected`, pinned revision, nodes with a copy,
-optional `recipe`) and `app/results.schema.json` (one record per run; `node` is any name from
-`SPARKVAULT_NODES`, or two joined with `+`). A malformed file is skipped and listed at the top of every
-page; it never takes the app down.
-
-A **recipe** is a vLLM serve command stored as data. `tools/check-recipes.py` renders each recipe with the
-app's own renderer and compares it token for token with the command in your launch script
-(`golden.script`), so the catalogue cannot drift from what you actually run:
-
-```bash
-python3 tools/check-recipes.py                                   # the shipped examples
-python3 tools/check-recipes.py --catalogue ~/my-catalogue --root ~/path/to/your/launch-scripts
-```
-
-## Result upload
-
-Benchmark jobs can file records without anyone copying files. `tools/bench-vllm.sh` measures a running
-vLLM container (`BENCH_JSON=out.json` writes the `bench` block); wrap that in a full record (see
-`examples/results/`) and send it:
-
-```bash
-SPARKVAULT_URL=http://host:8080 SPARKVAULT_INGEST_TOKEN=... tools/submit-result.sh record.json
-```
-
-- **Auth:** `Authorization: Bearer <SPARKVAULT_INGEST_TOKEN>`. No session or cookie is accepted on this route,
-  and it is off (404) unless a token of at least 32 characters is set. Five wrong tokens from one address lock it
-  for a minute.
-- **Accepts:** one JSON object, at most 64 KB, valid against the schema, whose `model` is in `library.yaml`, whose
-  `id` is only letters, digits and `. _ + -` (it becomes a file name), and which does not already exist. Replies:
-  `201` stored, `401` bad token, `409` id exists, `413` too big, `422` invalid, `503` inbox not writable. The
-  reply never echoes the body.
-- **Writes:** only `<inbox>/<id>.json`, created exclusively (never overwrites). The container stays read-only;
-  `/inbox` is its one writable mount (create it and give it to the `user:` set in the compose file first).
-- **Pending until you commit it:** uploads show in the UI as *pending*. To make one permanent:
-
-  ```bash
-  python3 tools/import-results.py --catalogue ~/my-catalogue /path/to/inbox          # dry run
-  python3 tools/import-results.py --catalogue ~/my-catalogue /path/to/inbox --apply  # copy the valid ones
-  ```
-
-  then sync the catalogue again; the committed record replaces the pending one (same id).
-- **Transport:** plain HTTP, like the login. Anything that can sniff that network segment can read the token, so it
-  only buys "accepts schema-valid records into a quarantine folder". Terminate TLS in front of it before you
-  widen who can reach it.
-
-**Benchmark notes.** `tools/bench-vllm.sh` takes its output tokens/s from the server's own
-`vllm:generation_tokens_total` counter, not from `vllm bench serve`, which counts only visible text and so
-undercounts reasoning models (gpt-oss reported about a third of what it generated). A run that generated fewer than
-95% of the requested tokens is written with `complete: false`. `BENCH_DATASET=prompts` sends the long-form questions
-in `tools/bench-prompts.jsonl` instead of random tokens, which some models answer briefly (about 170 of 256 tokens for
-gpt-oss-120b). Numbers are comparable only within one dataset, so say which you used in the record's `source`.
+- Plain-Linux Docker hosts are untested (only the NAS layout has been run).
+- The two-node cluster playbook has been run for `status` only; `up` and `down`, including their firewall check,
+  have not been exercised in this form.
+- One admin account, and plain HTTP: terminate TLS in front of it before widening who can reach it, and set
+  `SPARKVAULT_COOKIE_SECURE=1` once you do.
+- The model page's Deploy box is a placeholder.
+- Tool-call replay and Claude-judge evals are produced outside this repo; SparkVault stores and displays their
+  records. A judge harness that writes only an `eval` block needs its record's `id`, `model`, `node` and `source`
+  added before it is imported.
+- The playbooks expect your launch scripts at `scripts/run-vllm.sh` and `scripts/candidates/<name>.sh` in a recipes
+  clone on each node, and fixed head/worker roles for the two-node cluster.
 
 ## Security model
 
@@ -166,31 +95,6 @@ SparkVault is built for a trusted, self-hosted network, not the open internet.
 - Read-only mounts, read-only root filesystem, all capabilities dropped, `no-new-privileges`.
 - Content-Security-Policy with no inline script or style; catalogue text is escaped (tested).
 - If you find a vulnerability, please open a private security advisory on GitHub rather than a public issue.
-
-## Open work
-
-- **Ansible playbooks: published in [`ansible/`](ansible/README.md).** Sanitized and variable-driven (site values in
-  `group_vars/vllm_nodes.yml`, secrets from the environment). Run on real nodes 2026-11-07: status, rollback, a `vllm-main`
-  redeploy, cluster `status`, and a deploy + benchmark + rollback of a candidate (the record matched the one the
-  private playbooks made). The upload to SparkVault's inbox (HTTP 201) was verified the same day.
-  **Not yet exercised:** `vllm_cluster.yml up` / `down` (including the firewall probe).
-- **Same-dataset comparisons: done 2026-11-06.** qwen-agent, lightning, llama-3.3-70b and qwen2.5-7b were re-run on
-  `BENCH_DATASET=prompts` (`playbooks/gx10_bench_all.yml` in the homelab Ansible, label `<model>-bench-prompts`) and
-  are comparable with the gpt-oss-120b cluster record. The earlier random-dataset records for the three candidates
-  are marked `suspect` and superseded. Keep the dataset in each record's `source`, and re-run on `prompts` for any
-  model added later. Two bench bugs surfaced and are fixed: the prompts dataset needs pandas, which the stock image
-  lacks (the script installs it under `/tmp` of the container), and a warm-up correction understated tok/s by 1/(N+1).
-- **Tool-call and replay results: collected by hand, 2026-11-06.** `replay-dump.py` (localai) prints a
-  `REPLAY_RESULT` line and `tools/replay-record.py` turns it into a record. The captured request is readable only by
-  the `hermes` user, so this is a manual step per model and not part of the benchmark playbook. Results on the one
-  dump (10 requests per variant): qwen-agent, lightning and gpt-oss-120b 20/20; llama-3.3-70b 11/20 (10/10 without
-  the trailing period, 1/10 with it). **Not applicable:** qwen2.5-7b, whose launch recipe sets no `--max-model-len` (the model's
-  default is probably 32K, shorter than the dump's roughly 47K-token prompt); testing it would need a recipe change. The dump is Qwen-shaped, so a pass shows the model follows that one request's
-  tool schema, not that it handles every tool format. Models served at 64K need `REPLAY_MAX_TOKENS` because the dump
-  asks for 65536 output tokens.
-- **Judge evals: qwen2.5-7b done 2026-11-07** (overall 5.6, 12/12 prompts, via the LiteLLM `scratch/*` route in localai).
-  gpt-oss-120b and the others were recorded earlier. The harness writes only an `eval` block, so the record's
-  `id`, `model`, `node` and `source` are added by hand before it goes into the catalogue.
 
 ## Development
 
@@ -215,6 +119,7 @@ export SPARKVAULT_CATALOGUE_DIR=$PWD/examples SPARKVAULT_HF_DIR=/path/to/hugging
 | `tests/` | Auth/CSRF/lockout, filters and sorting, drift states against mock caches, bad data never crashes the app, output escaping, the golden recipe check, upload. |
 | `examples/` | A sample catalogue, results and launch scripts to copy and edit. |
 | `ansible/` | Playbooks: deploy a model, benchmark it, record and upload the result ([README](ansible/README.md)). |
-| `tools/` | `check-recipes.py`, `import-results.py`, `results-report.py` (Markdown report), `bench-vllm.sh` (+ `bench-prompts.jsonl`), `submit-result.sh`. |
-| `scripts/` | `init-env.sh` (creates `sparkvault.env`), `sync-app.sh` (copies the app to your server), `sync-catalogue.sh` (copies your catalogue). |
-| `Dockerfile`, `docker-compose.yml`, `sparkvault.env.example` | Container files. |
+| `tools/` | `check-recipes.py`, `import-results.py`, `results-report.py` (Markdown report), `replay-record.py`, `bench-vllm.sh` (+ `bench-prompts.jsonl`), `submit-result.sh`. |
+| `scripts/` | `init-env.sh` (creates `sparkvault.env`), `make-compose.py`, `sync-app.sh` (copies the app to your server), `sync-catalogue.sh` (copies your catalogue). |
+| `docs/images/` | Screenshots used in this README and INSTRUCTIONS.md. |
+| `Dockerfile`, `docker-compose.yml`, `sparkvault.env.example`, `deploy.example.conf` | Container files. |
