@@ -1,3 +1,5 @@
 inventory.yml
 *.retry
 .venv/
+local.yml
+.env
