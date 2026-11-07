@@ -55,6 +55,12 @@ ansible vllm_nodes -m ping
 ansible vllm_nodes -m command -a id              # must list the docker group
 ```
 
+**Catalogue on the Ansible server (optional).** If you keep your catalogue (`library.yaml` + `results/`) in its own
+repo, clone it on the Ansible server and set `sv_catalogue_dir` to its absolute path (in `group_vars/vllm_nodes.yml`,
+or in an override file). The benchmark tasks then read `library.yaml` from there, not from the nodes' recipes clones,
+so there is one copy. `git pull` it before a run. `tools/import-results.py` is separate and needs no setting: it takes
+`--catalogue DIR` on the command line.
+
 To upload results to SparkVault, export the token and URL in the shell that runs Ansible (never commit
 them). The token must equal `SPARKVAULT_INGEST_TOKEN` in `sparkvault.env` on the server:
 

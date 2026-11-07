@@ -16,9 +16,13 @@
 # still written, as validity=suspect with the reason, never as ok. The API key stays on the node:
 # it is sourced from sv_env_file, and the script redacts it from its own output.
 
-- name: Bench, read the catalogue on the node
+# Where library.yaml comes from: the catalogue clone on the Ansible server when sv_catalogue_dir is set,
+# otherwise the node's recipes clone (sv_repo_dir/sv_library_file).
+- name: Bench, read the catalogue
   ansible.builtin.slurp:
-    src: "{{ sv_repo_dir }}/{{ sv_library_file }}"
+    src: "{{ (sv_catalogue_dir ~ '/library.yaml') if sv_catalogue_dir | default('') | length > 0 else (sv_repo_dir ~ '/' ~ sv_library_file) }}"
+  delegate_to: "{{ 'localhost' if sv_catalogue_dir | default('') | length > 0 else inventory_hostname }}"
+  become: false
   register: sv_lib_raw
 
 - name: Bench, the model must be in the catalogue and this script must be its launch script
@@ -27,7 +31,7 @@
       - sv_lib_entry | length > 0
       - sv_lib_entry.launch_script == sv_script
     fail_msg: >-
-      {{ sv_model }} is not in {{ sv_library_file }} on {{ inventory_hostname }} (pull the clone?) or its launch_script is not {{ sv_script }}.
+      {{ sv_model }} is not in {{ (sv_catalogue_dir ~ '/library.yaml') if sv_catalogue_dir | default('') | length > 0 else (sv_repo_dir ~ '/' ~ sv_library_file ~ ' on ' ~ inventory_hostname) }} (git pull it?) or its launch_script is not {{ sv_script }}.
       A result recorded against the wrong model would be worse than none.
   vars:
     sv_lib_entry: "{{ (sv_lib_raw.content | b64decode | from_yaml).models | selectattr('id', 'equalto', sv_model) | list | first | default({}) }}"

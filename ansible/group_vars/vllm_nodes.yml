@@ -15,6 +15,11 @@ sv_repo_dir: /opt/sparkvault-recipes
 
 # Paths below are relative to sv_repo_dir.
 sv_library_file: library.yaml          # the catalogue; each model's `launch_script` must match the script you deploy
+
+# Optional: a clone of your catalogue repo (library.yaml + results/) ON THE ANSIBLE SERVER, as an absolute
+# path. When set, the benchmark tasks read library.yaml from there instead of from the node's recipes
+# clone, so the catalogue has one copy. `git pull` it before a run. Empty = use the node's clone above.
+sv_catalogue_dir: ""
 sv_bench_script: tools/bench-vllm.sh   # the throughput benchmark (copy it from this repo's tools/ into the clone)
 sv_standing_script: scripts/run-vllm.sh  # the "standing model" launch script that rollback recreates vllm-main from
 
