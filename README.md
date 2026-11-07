@@ -172,8 +172,8 @@ SparkVault is built for a trusted, self-hosted network, not the open internet.
 - **Ansible playbooks: published in [`ansible/`](ansible/README.md).** Sanitized and variable-driven (site values in
   `group_vars/vllm_nodes.yml`, secrets from the environment). Run on real nodes 2026-11-07: status, rollback, a `vllm-main`
   redeploy, cluster `status`, and a deploy + benchmark + rollback of a candidate (the record matched the one the
-  private playbooks made). **Not yet exercised:** the SparkVault upload task and `vllm_cluster.yml up` / `down`
-  (including the firewall probe).
+  private playbooks made). The upload to SparkVault's inbox (HTTP 201) was verified the same day.
+  **Not yet exercised:** `vllm_cluster.yml up` / `down` (including the firewall probe).
 - **Same-dataset comparisons: done 2026-11-06.** qwen-agent, lightning, llama-3.3-70b and qwen2.5-7b were re-run on
   `BENCH_DATASET=prompts` (`playbooks/gx10_bench_all.yml` in the homelab Ansible, label `<model>-bench-prompts`) and
   are comparable with the gpt-oss-120b cluster record. The earlier random-dataset records for the three candidates
