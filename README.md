@@ -79,7 +79,6 @@ Known limits:
   have not been exercised in this form.
 - One admin account, and plain HTTP: terminate TLS in front of it before widening who can reach it, and set
   `SPARKVAULT_COOKIE_SECURE=1` once you do.
-- The model page's Deploy box is a placeholder.
 - Tool-call replay and Claude-judge evals are produced outside this repo; SparkVault stores and displays their
   records. A judge harness that writes only an `eval` block needs its record's `id`, `model`, `node` and `source`
   added before it is imported.

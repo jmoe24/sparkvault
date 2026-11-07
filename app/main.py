@@ -2,7 +2,7 @@
 
 Nothing here writes to the catalogue folder, the Hugging Face cache, or any GPU node. The one write is
 POST /api/results, which parks a validated result record in the inbox (bearer token, off unless
-SPARKVAULT_INGEST_TOKEN is set). Deploy and download arrive in later phases behind this same login.
+SPARKVAULT_INGEST_TOKEN is set). Deploy and download are not part of v1.
 """
 import hmac
 import json

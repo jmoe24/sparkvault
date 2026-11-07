@@ -1,4 +1,4 @@
-"""The launcher's rendering of a recipe, shared by the app and sparkvault/check-recipes.py.
+"""The rendering of a recipe, shared by the app and tools/check-recipes.py.
 
 One implementation on purpose: the golden check proves THIS function reproduces the frozen
 script's serve command, so the app can never show or run something the check did not see.

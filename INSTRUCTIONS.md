@@ -182,7 +182,7 @@ cached models the catalogue does not mention. It is read-only: nothing on this p
 | `stale` | Present and matching, but the catalogue says it is not on the shared storage (`on_nas: false`). |
 
 SparkVault is read-only everywhere: the one thing it ever writes is its inbox folder of uploaded records. It does
-not deploy models. The Deploy box on a model page is a placeholder in this version.
+not deploy models: the Deploy box on a model page points you to the Ansible playbooks.
 
 ## Get results in
 
