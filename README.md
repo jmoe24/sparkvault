@@ -170,8 +170,10 @@ SparkVault is built for a trusted, self-hosted network, not the open internet.
 ## Open work
 
 - **Ansible playbooks: published in [`ansible/`](ansible/README.md).** Sanitized and variable-driven (site values in
-  `group_vars/vllm_nodes.yml`, secrets from the environment). Syntax-checked and `--list-tasks` only: the sanitized copy has not
-  been run against nodes, so expect small path fixes on first use.
+  `group_vars/vllm_nodes.yml`, secrets from the environment). Run on real nodes 2026-11-07: status, rollback, a `vllm-main`
+  redeploy, cluster `status`, and a deploy + benchmark + rollback of a candidate (the record matched the one the
+  private playbooks made). **Not yet exercised:** the SparkVault upload task and `vllm_cluster.yml up` / `down`
+  (including the firewall probe).
 - **Same-dataset comparisons: done 2026-11-06.** qwen-agent, lightning, llama-3.3-70b and qwen2.5-7b were re-run on
   `BENCH_DATASET=prompts` (`playbooks/gx10_bench_all.yml` in the homelab Ansible, label `<model>-bench-prompts`) and
   are comparable with the gpt-oss-120b cluster record. The earlier random-dataset records for the three candidates
@@ -182,10 +184,13 @@ SparkVault is built for a trusted, self-hosted network, not the open internet.
   `REPLAY_RESULT` line and `tools/replay-record.py` turns it into a record. The captured request is readable only by
   the `hermes` user, so this is a manual step per model and not part of the benchmark playbook. Results on the one
   dump (10 requests per variant): qwen-agent, lightning and gpt-oss-120b 20/20; llama-3.3-70b 11/20 (10/10 without
-  the trailing period, 1/10 with it). **Not run:** qwen2.5-7b, whose default context is probably shorter than the
-  dump's roughly 47K-token prompt. The dump is Qwen-shaped, so a pass shows the model follows that one request's
+  the trailing period, 1/10 with it). **Not applicable:** qwen2.5-7b, whose launch recipe sets no `--max-model-len` (the model's
+  default is probably 32K, shorter than the dump's roughly 47K-token prompt); testing it would need a recipe change. The dump is Qwen-shaped, so a pass shows the model follows that one request's
   tool schema, not that it handles every tool format. Models served at 64K need `REPLAY_MAX_TOKENS` because the dump
   asks for 65536 output tokens.
+- **Judge evals: qwen2.5-7b done 2026-11-07** (overall 5.6, 12/12 prompts, via the LiteLLM `scratch/*` route in localai).
+  gpt-oss-120b and the others were recorded earlier. The harness writes only an `eval` block, so the record's
+  `id`, `model`, `node` and `source` are added by hand before it goes into the catalogue.
 
 ## Development
 
