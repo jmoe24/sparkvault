@@ -1,0 +1,38 @@
+---
+# Read-only. Shows which vllm container runs on each GX10, restart policy, image, and whether
+# /health answers. Changes nothing, so it is the first thing to run against a new node.
+#   ansible-playbook playbooks/gx10_vllm_status.yml [-l gx101]
+- name: GX10 vLLM status
+  hosts: gx10
+  gather_facts: false
+
+  tasks:
+    - name: List vllm containers
+      ansible.builtin.command:
+        argv: [docker, ps, -a, --filter, name=vllm-, --format, "{% raw %}{{.Names}}|{{.Status}}|{{.Image}}|{{.Ports}}{% endraw %}"]
+      register: sv_ps
+      changed_when: false
+
+    - name: Restart policy per container
+      ansible.builtin.command:
+        argv: [docker, inspect, --format, "{% raw %}{{.Name}} {{.HostConfig.RestartPolicy.Name}}{% endraw %}", "{{ item.split('|')[0] }}"]
+      loop: "{{ sv_ps.stdout_lines }}"
+      register: sv_restart
+      changed_when: false
+
+    - name: Probe /health on the vllm ports (no key needed)
+      ansible.builtin.uri:
+        url: "http://localhost:{{ item }}/health"
+        status_code: [200, 503]
+        timeout: 5
+      loop: [8000, 8001]
+      register: sv_health
+      failed_when: false
+      changed_when: false
+
+    - name: Report
+      ansible.builtin.debug:
+        msg:
+          containers: "{{ sv_ps.stdout_lines }}"
+          restart_policy: "{{ sv_restart.results | map(attribute='stdout') | list }}"
+          health: "{{ dict(sv_health.results | map(attribute='item') | zip(sv_health.results | map(attribute='status'))) }}"

@@ -1,0 +1,12 @@
+---
+# Copy to inventory.yml (git-ignored) and put your own addresses in it.
+# The two cluster roles are fixed by name: gx101 = Ray head + API, gx102 = worker. Single-node
+# playbooks work with any host names in the `gx10` group; the cluster playbook needs these two.
+all:
+  children:
+    gx10:
+      hosts:
+        gx101:
+          ansible_host: gx101.example.lan   # DNS name or IP of node 1
+        gx102:
+          ansible_host: gx102.example.lan   # DNS name or IP of node 2

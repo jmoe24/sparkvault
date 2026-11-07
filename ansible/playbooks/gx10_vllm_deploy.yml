@@ -1,0 +1,120 @@
+---
+# Rolling replace of a single-node vLLM container, one GX10 at a time (serial: 1), so the
+# other node keeps serving local-general. A node that does not come back healthy stops the
+# roll: the second node is never touched. Rollback is gx10_vllm_rollback.yml.
+#
+#   ansible-playbook playbooks/gx10_vllm_deploy.yml \
+#     -e sv_script=scripts/run-vllm.sh -e sv_container=vllm-main            # whole fleet
+#   ansible-playbook playbooks/gx10_vllm_deploy.yml -l gx102 \
+#     -e sv_script=scripts/candidates/llama-3.3-70b.sh -e sv_container=vllm-test -e sv_stop_main=true
+#
+# Runs the repo's own launch script on the node. The script is the source of truth for the
+# serve command (do not "tidy" it); this playbook never builds a command line.
+# The API key is read on the node from sv_env_file, never passed through Ansible.
+- name: Rolling replace of a GX10 vLLM container
+  hosts: gx10
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+
+  vars:
+    sv_stop_main: false      # trial scripts run vllm-test standalone: stop vllm-main first
+    sv_git_pull: false       # the clone belongs to your own account; pull it by hand first (the ansible user cannot write it)
+    sv_port: "{{ 8001 if sv_container == 'vllm-test' else 8000 }}"
+    sv_bench: false          # true = after the smoke test, benchmark the new container and write a result record (needs sv_model)
+
+  tasks:
+    - name: Check the inputs
+      ansible.builtin.assert:
+        that:
+          - sv_script is defined and sv_container is defined
+          - sv_script is match('^scripts/(run-vllm|candidates/[a-z0-9][a-z0-9._-]*)\.sh$')
+          - sv_container in ['vllm-main', 'vllm-test']
+        fail_msg: "sv_script must be scripts/run-vllm.sh or scripts/candidates/<name>.sh; sv_container vllm-main or vllm-test"
+
+    - name: Check the benchmark inputs
+      ansible.builtin.assert:
+        that: sv_model is defined and sv_model is match('^[a-z0-9][a-z0-9._-]*$')
+        fail_msg: "sv_bench=true needs -e sv_model=<catalogue id from sv_library_file>"
+      when: sv_bench | bool
+
+    - name: Env file with this node's key exists
+      ansible.builtin.stat:
+        path: "{{ sv_env_file }}"
+      register: sv_env
+
+    - name: Stop here if the node has no key file
+      ansible.builtin.fail:
+        msg: "{{ sv_env_file }} is missing on {{ inventory_hostname }}. Create it on the node (VLLM_API_KEY=...); it is deliberately not provisioned through Ansible."
+      when: not sv_env.stat.exists
+
+    - name: Bring the recipes clone up to date (fast-forward only)
+      ansible.builtin.command:
+        argv: [git, -C, "{{ sv_repo_dir }}", pull, --ff-only]
+      register: sv_pull
+      changed_when: "'Already up to date' not in sv_pull.stdout"
+      when: sv_git_pull | bool
+
+    - name: Record the commit being deployed
+      ansible.builtin.command:
+        argv: [git, -C, "{{ sv_repo_dir }}", rev-parse, --short, HEAD]
+      register: sv_rev
+      changed_when: false
+
+    - name: Script exists in that commit
+      ansible.builtin.stat:
+        path: "{{ sv_repo_dir }}/{{ sv_script }}"
+      register: sv_script_stat
+      failed_when: not sv_script_stat.stat.exists
+
+    - name: Stop vllm-main (trial scripts run standalone; vllm-main stays stopped until rollback)
+      ansible.builtin.command:
+        argv: [docker, stop, vllm-main]
+      when: sv_stop_main | bool
+      register: sv_stop
+      changed_when: "'vllm-main' in sv_stop.stdout"
+      failed_when: sv_stop.rc != 0 and 'No such container' not in sv_stop.stderr
+
+    - name: Run the launch script on the node
+      ansible.builtin.shell: |
+        set -euo pipefail
+        set -a; . "{{ sv_env_file }}"; set +a
+        exec "{{ sv_repo_dir }}/{{ sv_script }}"
+      args:
+        executable: /bin/bash
+        chdir: "{{ sv_repo_dir }}"
+      register: sv_launch
+      changed_when: true
+
+    - name: Wait for /health
+      ansible.builtin.uri:
+        url: "http://localhost:{{ sv_port }}/health"
+        timeout: 5
+      register: sv_wait
+      until: sv_wait.status == 200
+      retries: "{{ sv_health_retries }}"
+      delay: "{{ sv_health_delay }}"
+
+    - name: Smoke test, one tiny completion with non-empty content
+      ansible.builtin.shell: |
+        set -euo pipefail
+        set -a; . "{{ sv_env_file }}"; set +a
+        base=http://localhost:{{ sv_port }}
+        model=$(curl -fsS -H "Authorization: Bearer $VLLM_API_KEY" "$base/v1/models" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"][0]["id"])')
+        curl -fsS -H "Authorization: Bearer $VLLM_API_KEY" -H 'Content-Type: application/json' \
+          -d "{\"model\":\"$model\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the single word: ready\"}],\"max_tokens\":512,\"temperature\":0}" \
+          "$base/v1/chat/completions" \
+          | python3 -c 'import sys,json; c=json.load(sys.stdin)["choices"][0]["message"].get("content"); assert c and c.strip(), "empty content"; print("ok model=%s" % sys.argv[1])' "$model"
+      args:
+        executable: /bin/bash
+      register: sv_smoke
+      changed_when: false
+      no_log: true     # the command line carries the key
+
+    - name: Benchmark the container that just came up
+      ansible.builtin.include_tasks: ../tasks/gx10_bench.yml
+      when: sv_bench | bool
+
+    - name: Done
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: {{ sv_container }} from {{ sv_script }} @ {{ sv_rev.stdout }} healthy, {{ sv_smoke.stdout }}"

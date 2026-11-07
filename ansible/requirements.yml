@@ -1,0 +1,4 @@
+---
+# Ansible collections. The playbooks use only ansible.builtin modules, which ship with ansible-core,
+# so this list is empty on purpose. `ansible-galaxy collection install -r requirements.yml` is a no-op.
+collections: []

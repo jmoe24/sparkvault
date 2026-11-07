@@ -1,0 +1,173 @@
+---
+# Benchmark the vLLM container that was just deployed and write one result record.
+# Included by gx10_vllm_deploy.yml when -e sv_bench=true (so "deploy a model, then benchmark it" is
+# one run) and meant to be reused by the cluster playbook later. Not a playbook on its own.
+#
+# Inputs (set by the including playbook): sv_script, sv_container, sv_port, sv_rev (git rev-parse
+# result), sv_model (the catalogue id, an entry of sv_library_file), sv_label (optional), sv_results_dir (group_vars).
+# Optional overrides, used by the TP-2 cluster playbook: sv_bench_base_url (default http://localhost:<sv_port>),
+# sv_bench_node (default the inventory host, e.g. gx101+gx102), sv_bench_topology (default single, or tp2),
+# sv_bench_source (the record's `source` text), sv_bench_dataset (random, the default, or prompts = long-form questions from bench-prompts.jsonl, for models that answer random token soup briefly, like gpt-oss-120b; numbers compare only within one dataset).
+#
+# What it does: runs sv_bench_script (tools/bench-vllm.sh in this repo) on the node with BENCH_JSON set, reads the JSON back,
+# turns it into a app/results.schema.json record, writes that to sv_results_dir on the Ansible
+# server (a local spool, so nothing is lost if SparkVault is down), then POSTs it to SparkVault's
+# inbox (sv_ingest_url, sv_ingest_token) when both are set. A run that was incomplete, had failed requests, or ran on a clamped GPU clock is
+# still written, as validity=suspect with the reason, never as ok. The API key stays on the node:
+# it is sourced from sv_env_file, and the script redacts it from its own output.
+
+- name: Bench, read the catalogue on the node
+  ansible.builtin.slurp:
+    src: "{{ sv_repo_dir }}/{{ sv_library_file }}"
+  register: sv_lib_raw
+
+- name: Bench, the model must be in the catalogue and this script must be its launch script
+  ansible.builtin.assert:
+    that:
+      - sv_lib_entry | length > 0
+      - sv_lib_entry.launch_script == sv_script
+    fail_msg: >-
+      {{ sv_model }} is not in {{ sv_library_file }} on {{ inventory_hostname }} (pull the clone?) or its launch_script is not {{ sv_script }}.
+      A result recorded against the wrong model would be worse than none.
+  vars:
+    sv_lib_entry: "{{ (sv_lib_raw.content | b64decode | from_yaml).models | selectattr('id', 'equalto', sv_model) | list | first | default({}) }}"
+
+- name: Bench, the node's clone must have the JSON-capable bench script
+  ansible.builtin.command:
+    argv: [grep, -q, BENCH_JSON, "{{ sv_repo_dir }}/{{ sv_bench_script }}"]
+  changed_when: false
+  failed_when: false
+  register: sv_bench_script_ok
+
+- name: Bench, stop early if the clone is stale
+  ansible.builtin.assert:
+    that: sv_bench_script_ok.rc == 0
+    fail_msg: >-
+      {{ sv_repo_dir }}/{{ sv_bench_script }} on {{ inventory_hostname }} has no BENCH_JSON support, so the clone is stale.
+      Run `git -C {{ sv_repo_dir }} pull --ff-only` as the clone's owner on the node (the ansible user cannot write it), then re-run.
+
+- name: Bench, run the bench script against {{ sv_container }}
+  ansible.builtin.shell: |
+    set -euo pipefail
+    set -a; . "{{ sv_env_file }}"; set +a
+    export VLLM_CONTAINER="{{ sv_container }}" BASE_URL="{{ sv_bench_base_url | default('http://localhost:' ~ sv_port) }}" BENCH_JSON="{{ sv_bench_tmp }}" BENCH_DATASET="{{ sv_bench_dataset | default('random') }}"
+    "{{ sv_repo_dir }}/{{ sv_bench_script }}" 2>&1 | sed -E 's/vllm-[0-9a-f]{32}/<redacted>/g'
+  args:
+    executable: /bin/bash
+    chdir: "{{ sv_repo_dir }}"
+  register: sv_bench_run
+  changed_when: false
+  vars:
+    sv_bench_tmp: "/tmp/sparkvault-bench-{{ inventory_hostname }}.json"
+
+- name: Bench, output
+  ansible.builtin.debug:
+    var: sv_bench_run.stdout_lines
+
+- name: Bench, the script must have written its JSON
+  ansible.builtin.stat:
+    path: "/tmp/sparkvault-bench-{{ inventory_hostname }}.json"
+  register: sv_bench_json
+
+- name: Bench, fail clearly if it did not
+  ansible.builtin.assert:
+    that: sv_bench_json.stat.exists
+    fail_msg: "bench-vllm.sh finished but wrote no JSON (see the output above). Nothing was recorded."
+
+- name: Bench, read the JSON back from the node
+  ansible.builtin.slurp:
+    src: "/tmp/sparkvault-bench-{{ inventory_hostname }}.json"
+  register: sv_bench_raw
+
+- name: Bench, remove the node's temp file
+  ansible.builtin.file:
+    path: "/tmp/sparkvault-bench-{{ inventory_hostname }}.json"
+    state: absent
+
+- name: Bench, build the result record
+  ansible.builtin.set_fact:
+    sv_bench_record: >-
+      {{
+        {
+          'schema_version': 1,
+          'id': sv_bench_date ~ '-' ~ inventory_hostname ~ '-' ~ sv_bench_label,
+          'date': sv_bench_date,
+          'model': sv_model,
+          'node': sv_bench_node | default(inventory_hostname),
+          'topology': sv_bench_topology | default('single'),
+          'label': sv_bench_label,
+          'validity': ('ok' if sv_bench_notes | length == 0 else 'suspect'),
+          'config': {
+            'launch_script': sv_script,
+            'container': sv_container,
+            'recipe_commit': sv_rev.stdout
+          } | combine({'gpu_sm_clock_mhz': sv_bench_data.gpu_sm_clock_mhz} if sv_bench_data.gpu_sm_clock_mhz is defined else {})
+            | combine({'model_sha': sv_lib_rev} if sv_lib_rev else {}),
+          'bench': sv_bench_data.bench,
+          'source': (sv_bench_source | default('ansible gx10_vllm_deploy.yml sv_bench=true')) ~ ' (' ~ sv_bench_script ~ ', ' ~ ('long-form prompts, 256 out' if (sv_bench_dataset | default('random')) == 'prompts' else 'random 256/256') ~ ' x ' ~ sv_bench_data.bench.concurrent.num_prompts | default('?') ~ ' prompts' ~ ('; output tok/s from the server token counter' if sv_bench_data.output_from_server | default(false) else '') ~ ')'
+        } | combine({'validity_note': sv_bench_notes | join('; ')} if sv_bench_notes | length > 0 else {})
+      }}
+  vars:
+    sv_bench_data: "{{ sv_bench_raw.content | b64decode | from_json }}"
+    sv_bench_date: "{{ now(fmt='%Y-%m-%d') }}"
+    sv_bench_label: "{{ sv_label | default(sv_model ~ '-bench') }}"
+    sv_lib_rev: "{{ ((sv_lib_raw.content | b64decode | from_yaml).models | selectattr('id', 'equalto', sv_model) | list | first | default({})).revision | default('') }}"
+    sv_bench_notes: >-
+      {{
+        ([] if sv_bench_data.complete | default(false) else ['bench incomplete or had failed requests'])
+        + ([] if sv_bench_data.clock_ok | default(none) is true else
+           (['GPU clock was not sampled'] if sv_bench_data.clock_ok | default(none) is none
+            else ['GPU SM clock below the clamp threshold under load (' ~ sv_bench_data.gpu_sm_clock_mhz ~ ' MHz); see your GPU clock check']))
+      }}
+
+- name: Bench, make sure the results directory exists on the Ansible server
+  ansible.builtin.file:
+    path: "{{ sv_results_dir }}"
+    state: directory
+    mode: "0750"
+  delegate_to: localhost
+  become: false
+
+- name: Bench, write the record on the Ansible server
+  ansible.builtin.copy:
+    content: "{{ sv_bench_record | to_nice_json }}\n"
+    dest: "{{ sv_results_dir }}/{{ sv_bench_record.id }}.json"
+    mode: "0640"
+  delegate_to: localhost
+  become: false
+
+- name: Bench, upload the record to SparkVault (its inbox on the NAS)
+  ansible.builtin.uri:
+    url: "{{ sv_ingest_url }}"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ sv_ingest_token }}"
+    body_format: json
+    body: "{{ sv_bench_record }}"
+    status_code: [201, 409]
+    use_proxy: false
+    timeout: 20
+  delegate_to: localhost
+  become: false
+  register: sv_upload
+  failed_when: false
+  no_log: true          # the token is in the headers; the next task reports the status without it
+  when: sv_ingest_url | default('') | length > 0 and sv_ingest_token | default('') | length > 0
+
+- name: Bench, the upload must have been accepted (the local copy above is kept either way)
+  ansible.builtin.assert:
+    that: sv_upload.status | default(0) in [201, 409]
+    fail_msg: >-
+      SparkVault did not accept the record (HTTP {{ sv_upload.status | default('no response') }}:
+      {{ (sv_upload.json | default({})).error | default(sv_upload.msg | default('unknown')) }}).
+      The record is safe in {{ sv_results_dir }}/{{ sv_bench_record.id }}.json on the Ansible server; fix the cause and POST it again.
+  when: sv_upload is not skipped
+
+- name: Bench, summary
+  ansible.builtin.debug:
+    msg: >-
+      {{ sv_bench_record.id }}: validity={{ sv_bench_record.validity }}
+      single={{ sv_bench_record.bench.single_stream_tok_s | default('-') }} tok/s,
+      concurrent={{ sv_bench_record.bench.concurrent.output_tok_s | default('-') }} tok/s
+      {{ '(' ~ sv_bench_record.validity_note ~ ')' if sv_bench_record.validity_note is defined else '' }}
+      -> {{ 'SparkVault inbox (HTTP ' ~ sv_upload.status ~ (', it already had this id' if sv_upload.status == 409 else '') ~ ') and ' if sv_upload is not skipped else 'NOT uploaded (no sv_ingest_url / sv_ingest_token set), only ' }}{{ sv_results_dir }}/{{ sv_bench_record.id }}.json on the Ansible server

@@ -1,0 +1,48 @@
+---
+# Back to the standing configuration: remove a trial container and make sure vllm-main runs.
+# Safe to run when nothing is wrong (it then only checks /health). Serial, so one node keeps
+# serving. For a TP-2 cluster use gx10_vllm_cluster.yml with sv_cluster_action=down.
+#   ansible-playbook playbooks/gx10_vllm_rollback.yml [-l gx101]
+- name: Roll a GX10 back to vllm-main
+  hosts: gx10
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+
+  tasks:
+    - name: Remove the trial container if present
+      ansible.builtin.command:
+        argv: [docker, rm, -f, vllm-test]
+      register: sv_rm
+      changed_when: "sv_rm.stdout | trim == 'vllm-test'"
+
+    - name: Is vllm-main running?
+      ansible.builtin.command:
+        argv: [docker, inspect, --format, "{% raw %}{{.State.Running}}{% endraw %}", vllm-main]
+      register: sv_main
+      changed_when: false
+      failed_when: false
+
+    - name: Start the stopped vllm-main
+      ansible.builtin.command:
+        argv: [docker, start, vllm-main]
+      when: sv_main.rc == 0 and sv_main.stdout | trim == 'false'
+
+    - name: vllm-main does not exist, recreate it from the standing launch script
+      ansible.builtin.shell: |
+        set -euo pipefail
+        set -a; . "{{ sv_env_file }}"; set +a
+        exec "{{ sv_repo_dir }}/{{ sv_standing_script }}"
+      args:
+        executable: /bin/bash
+        chdir: "{{ sv_repo_dir }}"
+      when: sv_main.rc != 0
+
+    - name: Wait for /health
+      ansible.builtin.uri:
+        url: http://localhost:8000/health
+        timeout: 5
+      register: sv_wait
+      until: sv_wait.status == 200
+      retries: "{{ sv_health_retries }}"
+      delay: "{{ sv_health_delay }}"

@@ -169,9 +169,9 @@ SparkVault is built for a trusted, self-hosted network, not the open internet.
 
 ## Open work
 
-- **Publish the Ansible playbooks.** The deploy and benchmark flow (a playbook that brings a model up, runs
-  `tools/bench-vllm.sh`, builds the record and uploads it) lives in a private homelab repo today. A sanitized,
-  variable-driven version belongs here so the whole loop is reproducible.
+- **Ansible playbooks: published in [`ansible/`](ansible/README.md).** Sanitized and variable-driven (site values in
+  `group_vars/gx10.yml`, secrets from the environment). Syntax-checked and `--list-tasks` only: the sanitized copy has not
+  been run against nodes, so expect small path fixes on first use.
 - **Same-dataset comparisons: done 2026-11-06.** qwen-agent, lightning, llama-3.3-70b and qwen2.5-7b were re-run on
   `BENCH_DATASET=prompts` (`playbooks/gx10_bench_all.yml` in the homelab Ansible, label `<model>-bench-prompts`) and
   are comparable with the gpt-oss-120b cluster record. The earlier random-dataset records for the three candidates
@@ -209,6 +209,7 @@ export SPARKVAULT_CATALOGUE_DIR=$PWD/examples SPARKVAULT_HF_DIR=/path/to/hugging
 | `app/` | The web app (FastAPI + Jinja, server-rendered, no JavaScript) and the result schema. |
 | `tests/` | Auth/CSRF/lockout, filters and sorting, drift states against mock caches, bad data never crashes the app, output escaping, the golden recipe check, upload. |
 | `examples/` | A sample catalogue, results and launch scripts to copy and edit. |
+| `ansible/` | Playbooks: deploy a model, benchmark it, record and upload the result ([README](ansible/README.md)). |
 | `tools/` | `check-recipes.py`, `import-results.py`, `results-report.py` (Markdown report), `bench-vllm.sh` (+ `bench-prompts.jsonl`), `submit-result.sh`. |
 | `scripts/` | `init-env.sh` (creates `sparkvault.env`), `sync-app.sh` (copies the app to your server), `sync-catalogue.sh` (copies your catalogue). |
 | `Dockerfile`, `docker-compose.yml`, `sparkvault.env.example` | Container files. |

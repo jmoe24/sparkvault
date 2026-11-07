@@ -1,0 +1,127 @@
+---
+# One model of gx10_bench_all.yml: deploy it, benchmark it on the prompts dataset, and always put the
+# node back on vllm-main afterwards. Not a playbook on its own.
+#
+# Input: sv_m = {model, script, container, stop_main, weights} (one row of sv_bench_models).
+# The deploy steps mirror playbooks/gx10_vllm_deploy.yml; keep them in step with it (the launch
+# script stays the source of truth for the serve command, this never builds one).
+
+- name: "{{ sv_m.model }}, are the weights on {{ inventory_hostname }}?"
+  ansible.builtin.stat:
+    path: "{{ sv_m.weights }}"
+  register: sv_weights
+
+- name: "{{ sv_m.model }}, skipped: weights missing on {{ inventory_hostname }} ({{ sv_m.weights }})"
+  ansible.builtin.set_fact:
+    sv_skipped: "{{ (sv_skipped | default([])) + [sv_m.model] }}"
+  when: not sv_weights.stat.exists
+
+- name: "{{ sv_m.model }}, deploy, benchmark, roll back"
+  when: sv_weights.stat.exists
+  vars:
+    sv_script: "{{ sv_m.script }}"
+    sv_container: "{{ sv_m.container }}"
+    sv_model: "{{ sv_m.model }}"
+    sv_port: "{{ 8001 if sv_m.container == 'vllm-test' else 8000 }}"
+    sv_label: "{{ sv_m.model }}-bench-{{ sv_bench_dataset }}"
+  block:
+    - name: Check the script path
+      ansible.builtin.assert:
+        that:
+          - sv_script is match('^scripts/(run-vllm|candidates/[a-z0-9][a-z0-9._-]*)\.sh$')
+          - sv_container in ['vllm-main', 'vllm-test']
+
+    - name: Record the commit being benchmarked
+      ansible.builtin.command:
+        argv: [git, -C, "{{ sv_repo_dir }}", rev-parse, --short, HEAD]
+      register: sv_rev
+      changed_when: false
+
+    - name: Stop vllm-main (trial scripts run standalone)
+      ansible.builtin.command:
+        argv: [docker, stop, vllm-main]
+      when: sv_m.stop_main | bool
+      register: sv_stop
+      changed_when: "'vllm-main' in sv_stop.stdout"
+      failed_when: sv_stop.rc != 0 and 'No such container' not in sv_stop.stderr
+
+    - name: Run the launch script on the node
+      ansible.builtin.shell: |
+        set -euo pipefail
+        set -a; . "{{ sv_env_file }}"; set +a
+        exec "{{ sv_repo_dir }}/{{ sv_script }}"
+      args:
+        executable: /bin/bash
+        chdir: "{{ sv_repo_dir }}"
+      changed_when: true
+
+    - name: Wait for /health
+      ansible.builtin.uri:
+        url: "http://localhost:{{ sv_port }}/health"
+        timeout: 5
+      register: sv_wait
+      until: sv_wait.status == 200
+      retries: "{{ sv_health_retries }}"
+      delay: "{{ sv_health_delay }}"
+
+    - name: Smoke test, one tiny completion with non-empty content
+      ansible.builtin.shell: |
+        set -euo pipefail
+        set -a; . "{{ sv_env_file }}"; set +a
+        base=http://localhost:{{ sv_port }}
+        model=$(curl -fsS -H "Authorization: Bearer $VLLM_API_KEY" "$base/v1/models" | python3 -c 'import sys,json; print(json.load(sys.stdin)["data"][0]["id"])')
+        curl -fsS -H "Authorization: Bearer $VLLM_API_KEY" -H 'Content-Type: application/json' \
+          -d "{\"model\":\"$model\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the single word: ready\"}],\"max_tokens\":512,\"temperature\":0}" \
+          "$base/v1/chat/completions" \
+          | python3 -c 'import sys,json; c=json.load(sys.stdin)["choices"][0]["message"].get("content"); assert c and c.strip(), "empty content"; print("ok model=%s" % sys.argv[1])' "$model"
+      args:
+        executable: /bin/bash
+      changed_when: false
+      no_log: true     # the command line carries the key
+
+    - name: Benchmark and write the record
+      ansible.builtin.include_tasks: gx10_bench.yml
+
+    - name: Note the benchmarked model
+      ansible.builtin.set_fact:
+        sv_done: "{{ (sv_done | default([])) + [sv_m.model] }}"
+
+  always:
+    # Whatever happened above, leave the node serving vllm-main (same steps as gx10_vllm_rollback.yml).
+    # A failure in here is fatal and says so: the node may have no model.
+    - name: Rollback, remove the trial container
+      ansible.builtin.command:
+        argv: [docker, rm, -f, vllm-test]
+      register: sv_rm
+      changed_when: "sv_rm.stdout | trim == 'vllm-test'"
+
+    - name: Rollback, is vllm-main running?
+      ansible.builtin.command:
+        argv: [docker, inspect, --format, "{% raw %}{{.State.Running}}{% endraw %}", vllm-main]
+      register: sv_main
+      changed_when: false
+      failed_when: false
+
+    - name: Rollback, start the stopped vllm-main
+      ansible.builtin.command:
+        argv: [docker, start, vllm-main]
+      when: sv_main.rc == 0 and sv_main.stdout | trim == 'false'
+
+    - name: Rollback, vllm-main does not exist, recreate it from the standing launch script
+      ansible.builtin.shell: |
+        set -euo pipefail
+        set -a; . "{{ sv_env_file }}"; set +a
+        exec "{{ sv_repo_dir }}/{{ sv_standing_script }}"
+      args:
+        executable: /bin/bash
+        chdir: "{{ sv_repo_dir }}"
+      when: sv_main.rc != 0
+
+    - name: Rollback, wait for vllm-main /health
+      ansible.builtin.uri:
+        url: http://localhost:8000/health
+        timeout: 5
+      register: sv_back
+      until: sv_back.status == 200
+      retries: "{{ sv_health_retries }}"
+      delay: "{{ sv_health_delay }}"

@@ -1,0 +1,67 @@
+---
+# Variables for the GPU nodes (inventory group `gx10`). Everything site-specific lives here or in
+# inventory.yml; the playbooks contain no addresses, accounts or secrets. Override any value per
+# run with -e. See ../README.md for what each one does.
+
+# --- access -----------------------------------------------------------------------------------
+# The unprivileged account Ansible logs in as on the nodes (docker group, no sudo): docs/node-setup.md.
+ansible_user: ansible
+ansible_ssh_private_key_file: ~/.ssh/id_ansible
+
+# --- the recipes clone on each node ------------------------------------------------------------
+# A git clone, present on every node, that holds your vLLM launch scripts and the catalogue
+# (library.yaml). The playbooks run the scripts from it and never build a vLLM command line.
+sv_repo_dir: /opt/sparkvault-recipes
+
+# Paths below are relative to sv_repo_dir.
+sv_library_file: library.yaml          # the catalogue; each model's `launch_script` must match the script you deploy
+sv_bench_script: tools/bench-vllm.sh   # the throughput benchmark (copy it from this repo's tools/ into the clone)
+sv_standing_script: scripts/run-vllm.sh  # the "standing model" launch script that rollback recreates vllm-main from
+
+# --- the API key --------------------------------------------------------------------------------
+# A file ON each node containing `VLLM_API_KEY=...` (root:docker, mode 0640, one key per node). The
+# playbooks source it on the node. The key never passes through Ansible variables, extra-vars or logs.
+sv_env_file: /etc/sparkvault/vllm.env
+
+# --- timing -------------------------------------------------------------------------------------
+# Health wait after a launch: retries x delay seconds (a cold start loads the weights and compiles kernels).
+sv_health_retries: 90
+sv_health_delay: 10
+
+# --- single-node benchmark table (gx10_bench_all.yml) -------------------------------------------
+# One row per model. `weights` is a path that proves the weights are on that node (the model is
+# skipped and listed if it is missing). `stop_main: true` for candidates that run as vllm-test
+# beside nothing else; the row for the standing model redeploys vllm-main instead.
+# These rows are examples: replace them with your own.
+sv_bench_models:
+  - {model: standing-model, node: gx101, script: scripts/run-vllm.sh, container: vllm-main, stop_main: false, weights: /opt/models/standing-model}
+  - {model: candidate-a,    node: gx101, script: scripts/candidates/candidate-a.sh, container: vllm-test, stop_main: true, weights: /opt/models/candidate-a/config.json}
+
+# --- TP-2 cluster (gx10_vllm_cluster.yml) ---------------------------------------------------------
+# The inventory host names must be gx101 (Ray head and API) and gx102 (worker): the cluster
+# playbook and your cluster launch script both assume these two roles.
+# QSFP / interconnect addresses of the two nodes. EXAMPLE values: set your own, they must match
+# your netplan and your cluster launch script.
+sv_qsfp_ips:
+  gx101: 10.100.0.2
+  gx102: 10.100.0.1
+sv_cluster_image: vllm-node-mxfp4    # must already be on both nodes
+sv_cluster_health_retries: 120
+# Text shown in the firewall-check failure message: how to apply the host INPUT rules on a node.
+sv_input_rules_apply_hint: sudo scripts/cluster-input-rules.sh apply
+# Firewall check: a throwaway listener on this high port proves the host INPUT rules work. It must
+# not be 8000 or a port you deliberately allow.
+sv_probe_port: 29999
+
+# --- results ----------------------------------------------------------------------------------------
+# Each benchmark record is written here on the Ansible server first (a local spool, so nothing is
+# lost if SparkVault is down).
+sv_results_dir: "{{ lookup('env', 'HOME') }}/sparkvault-inbox"
+
+# Then it is POSTed to SparkVault's inbox. Leave sv_ingest_url empty to skip the upload and keep only
+# the local files. The token must equal SPARKVAULT_INGEST_TOKEN in sparkvault.env on the server.
+# It is read from the environment of the shell that runs ansible-playbook, so it is never in git:
+#   export SPARKVAULT_INGEST_TOKEN=...
+# (Or replace the lookup with an `ansible-vault encrypt_string` value if you keep a vault.)
+sv_ingest_url: "{{ lookup('env', 'SPARKVAULT_INGEST_URL') }}"   # e.g. http://sparkvault.example.lan:8080/api/results
+sv_ingest_token: "{{ lookup('env', 'SPARKVAULT_INGEST_TOKEN') }}"

@@ -1,0 +1,62 @@
+---
+# Benchmark every model listed in sv_bench_models (group_vars/gx10.yml), one at a time, on the prompts dataset.
+# Per model (tasks/gx10_bench_one.yml): deploy, smoke test,
+# tasks/gx10_bench.yml (writes the record and uploads it to SparkVault), and then ALWAYS roll the
+# node back to vllm-main, even if the bench failed. The play stops at the first failure, after the
+# rollback. A model whose weights are not on the node is skipped and listed at the end.
+#
+#   ansible-playbook playbooks/gx10_bench_all.yml --list-tasks          # nothing runs
+#   ansible-playbook playbooks/gx10_bench_all.yml                       # every row of sv_bench_models
+#   ansible-playbook playbooks/gx10_bench_all.yml -e sv_only=<model id>
+#   ansible-playbook playbooks/gx10_bench_all.yml -e sv_bench_dataset=random   # old-style numbers
+#
+# Every record is labelled <model>-bench-<dataset> so ids never collide with the older random-dataset
+# records, and the numbers are comparable with each other and with a cluster record on the same dataset.
+# Not covered: a TP-2 cluster model (takes both nodes offline): gx10_vllm_cluster.yml
+# -e sv_bench=true -e sv_bench_dataset=prompts. The other node keeps serving its standing model while one runs.
+- name: Benchmark the single-node catalogue models
+  hosts: gx10
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+
+  vars:
+    sv_bench_dataset: prompts
+    sv_only: ""          # one model id, or empty for all
+    # sv_bench_models (the table of models, nodes and launch scripts) lives in group_vars/gx10.yml.
+    sv_plan: >-
+      {{ sv_bench_models | selectattr('node', 'equalto', inventory_hostname)
+         | selectattr('model', 'in', [sv_only] if sv_only | length > 0 else (sv_bench_models | map(attribute='model') | list))
+         | list }}
+
+  tasks:
+    - name: Plan
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: {{ sv_plan | map(attribute='model') | list }} on the {{ sv_bench_dataset }} dataset"
+
+    - name: Check the inputs
+      ansible.builtin.assert:
+        that:
+          - sv_bench_dataset in ['prompts', 'random']
+          - sv_only | length == 0 or sv_only in (sv_bench_models | map(attribute='model') | list)
+        fail_msg: "sv_bench_dataset is prompts or random; sv_only must be one of {{ sv_bench_models | map(attribute='model') | list }}"
+
+    - name: Env file with this node's key exists
+      ansible.builtin.stat:
+        path: "{{ sv_env_file }}"
+      register: sv_env
+      failed_when: not sv_env.stat.exists
+
+    - name: One model at a time
+      ansible.builtin.include_tasks: ../tasks/gx10_bench_one.yml
+      loop: "{{ sv_plan }}"
+      loop_control:
+        loop_var: sv_m
+        label: "{{ sv_m.model }}"
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg:
+          benchmarked: "{{ sv_done | default([]) }}"
+          skipped_no_weights: "{{ sv_skipped | default([]) }}"
+          records: "{{ sv_results_dir }} on the Ansible server (uploaded to SparkVault when the token is set)"

@@ -1,0 +1,5 @@
+# Control machine (the "Ansible server"). Python 3.10+.
+# The playbooks use only ansible.builtin modules, so no collections are needed (see requirements.yml).
+ansible-core>=2.16,<2.21
+# Optional: lint before you commit changes to the playbooks.
+# ansible-lint
